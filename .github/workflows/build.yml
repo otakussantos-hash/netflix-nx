@@ -1,0 +1,36 @@
+name: Build NRO
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar dependencias
+        run: |
+          command -v curl >/dev/null || (apt-get update && apt-get install -y curl)
+          dkp-pacman -Syu --noconfirm
+          dkp-pacman -S --noconfirm --needed \
+            switch-pkg-config switch-sdl2 switch-sdl2_image switch-sdl2_ttf \
+            switch-curl switch-mbedtls switch-ffmpeg switch-libmpv
+          curl -L -o source/json.hpp https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp
+
+      - name: Compilar
+        run: make -j$(nproc)
+
+      - name: Montar pacote para o SD
+        run: |
+          mkdir -p out/switch/netflix-player
+          cp netflix-player.nro out/switch/netflix-player/
+          cp sdcard/switch/netflix-player/videos.json out/switch/netflix-player/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: netflix-player
+          path: out/
