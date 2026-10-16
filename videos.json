@@ -1,18 +1,19 @@
 {
   "videos": [
     {
-      "titulo": "Filme no Google Drive",
-      "url": "https://drive.google.com/file/d/COLE_O_ID_DO_VIDEO/view?usp=sharing",
-      "capa": "https://drive.google.com/file/d/COLE_O_ID_DA_CAPA/view?usp=sharing"
+      "titulo": "A Incrível História de Adaline",
+      "url": "https://drive.google.com/file/d/1LdhILVRl9KRCDJKca7N4yYtxRmCoAJaw/view",
+      "capa": "https://m.media-amazon.com/images/S/pv-target-images/9b412a470255ade9cfc69d17146d395d6d94a8521d2ab5a994f40258a8f13629.jpg"
     },
     {
-      "titulo": "Outro (formato curto)",
-      "url": "gdrive:COLE_O_ID_DO_VIDEO",
-      "capa": "gdrive:COLE_O_ID_DA_CAPA"
+      "titulo": "Sr. & Sra. Smith",
+      "url": "https://drive.google.com/file/d/1bJsB7wjvU7WWuFSJzwcz0VKQ6vz2UMlA/view",
+      "capa": "https://m.media-amazon.com/images/S/pv-target-images/30515fa4f75ddc8e6018493e302b0aa543d396cf9afc7f30e12d2b983ae138b5.jpg"
     },
     {
-      "titulo": "Link direto normal (mp4)",
-      "url": "https://meuservidor.com/filmes/exemplo.mp4"
+      "titulo": "Túmulo dos Vagalumes",
+      "url": "https://archive.org/download/o-tumulo-dos-vagalumes-1988-dublado/O%20T%C3%BAmulo%20dos%20Vagalumes%20%281988%29%20-%20Dublado.mp4",
+      "capa": "https://i0.wp.com/studioghibli.com.br/wp-content/uploads/2025/06/Tumulo-dos-Vaga-Lumes-1988-netflix.jpg?fit=768%2C432&ssl=1"
     }
   ]
 }
