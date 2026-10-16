@@ -12,13 +12,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Guarda as bibliotecas depois da 1a build que funcionar:
+      # nas proximas, nao depende mais do servidor do devkitPro.
+      - name: Cache das bibliotecas do Switch
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/devkitpro/portlibs
+          key: portlibs-switch-v1
+
+      - name: Diagnostico do servidor devkitPro
+        if: steps.cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: curl -sI --max-time 20 https://pkg.devkitpro.org/packages/dkp-libs.db | head -15
+
       - name: Instalar dependencias
+        if: steps.cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           command -v curl >/dev/null || (apt-get update && apt-get install -y curl)
 
           retry() {
-            for i in 1 2 3 4 5 6; do
+            for i in 1 2 3 4; do
               "$@" && return 0
               echo "Tentativa $i falhou (pkg.devkitpro.org pode estar com 403). Aguardando..."
               sleep $((i * 30))
@@ -26,13 +41,17 @@ jobs:
             return 1
           }
 
-          # sincroniza os bancos (sem -u: nao precisa atualizar o sistema todo)
-          retry dkp-pacman -Sy --noconfirm
+          PKGS="switch-pkg-config switch-sdl2 switch-sdl2_image switch-sdl2_ttf switch-curl switch-mbedtls switch-ffmpeg switch-libmpv"
 
-          retry dkp-pacman -S --noconfirm --needed \
-            switch-pkg-config switch-sdl2 switch-sdl2_image switch-sdl2_ttf \
-            switch-curl switch-mbedtls switch-ffmpeg switch-libmpv
+          if retry dkp-pacman -Sy --noconfirm; then
+            retry dkp-pacman -S --noconfirm --needed $PKGS
+          else
+            echo "Sem sincronizar: tentando com a lista de pacotes que ja vem na imagem..."
+            retry dkp-pacman -S --noconfirm --needed $PKGS
+          fi
 
+      - name: Baixar json.hpp
+        run: |
           curl -L --retry 5 --retry-delay 5 -o source/json.hpp \
             https://github.com/nlohmann/json/releases/download/v3.11.3/json.hpp
 
