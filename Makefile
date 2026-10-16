@@ -30,6 +30,14 @@ LIBS     := $(shell $(PKG) --libs --static $(PKGS)) -lnx -lm
 ifneq ($(BUILD),$(notdir $(CURDIR)))
 
 export OUTPUT := $(CURDIR)/$(TARGET)
+
+# Embute icone + NACP dentro do .nro. Sem isso o Homebrew Menu e as ferramentas
+# de atalho (forwarder) nao reconhecem o app.
+ICON := $(CURDIR)/icon.jpg
+ifneq ($(wildcard $(ICON)),)
+export NROFLAGS += --icon=$(ICON)
+endif
+export NROFLAGS += --nacp=$(CURDIR)/$(TARGET).nacp
 export TOPDIR := $(CURDIR)
 export VPATH  := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)

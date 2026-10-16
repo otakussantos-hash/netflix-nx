@@ -72,6 +72,7 @@ function fmt(s) {
 // ---------- Google Drive ----------
 function driveId(u) {
   if (u.startsWith("gdrive:")) return u.slice(7);
+  if (/^[A-Za-z0-9_-]{20,}$/.test(u)) return u;
   if (!u.includes("drive.google.com") && !u.includes("drive.usercontent.google.com")) return "";
   let s, p = u.indexOf("/d/");
   if (p >= 0) s = p + 3;

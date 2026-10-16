@@ -103,6 +103,7 @@ let items = [];
 function driveId(u){
   if(!u) return "";
   if(u.startsWith("gdrive:")) return u.slice(7).trim();
+  if(/^[A-Za-z0-9_-]{20,}$/.test(u.trim())) return u.trim();
   if(!/drive\.google\.com|drive\.usercontent\.google\.com/.test(u)) return "";
   let m = u.match(/\/d\/([^\/?&#]+)/) || u.match(/[?&]id=([^&#]+)/);
   return m ? m[1] : "";
@@ -118,7 +119,7 @@ function warnings(it){
   if(!it.titulo.trim()) w.push("Sem título.");
   if(!it.url.trim()) w.push("Falta o link do vídeo.");
   else if(/COLE_O_ID/.test(it.url)) w.push("O link do vídeo ainda é o exemplo.");
-  else if(!/^(https?:\/\/|gdrive:)/.test(it.url.trim())) w.push("O link deve começar com https:// ou gdrive:");
+  else if(!/^(https?:\/\/|gdrive:)/.test(it.url.trim()) && !/^[A-Za-z0-9_-]{20,}$/.test(it.url.trim())) w.push("O link deve começar com https:// ou gdrive:");
   if(/COLE_O_ID/.test(it.capa)) w.push("A capa ainda é o exemplo.");
   return w;
 }

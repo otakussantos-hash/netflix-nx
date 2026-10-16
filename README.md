@@ -30,6 +30,13 @@ Player de vídeo em streaming (buffer em RAM, sem baixar o arquivo inteiro) com 
 - `demuxer-readahead-secs` = segundos pré-carregados
 - Renderização em 960x540 por software; aumente `W`/`H` se o aparelho aguentar.
 
+## Se o vídeo não tocar
+- O app agora mostra o motivo na tela e grava `sdmc:/switch/netflix-player/log.txt` (últimas linhas do mpv). Mande esse arquivo se continuar falhando.
+- Vídeos http/https são baixados pelo libcurl (mesmo caminho das capas) e entregues ao mpv; `.m3u8` usa o ffmpeg nativo do mpv.
+
+## Atalho / ícone
+O `.nro` agora leva `icon.jpg` (256x256) e o NACP embutidos. Troque o `icon.jpg` pelo seu se quiser.
+
 ## Observações
 - Decodificação é por software (`hwdec=no`): prefira H.264 até 720p.
 - Se o job falhar no passo de dependências, confira o nome do pacote da libmpv no devkitPro (`dkp-pacman -Ss mpv`).
