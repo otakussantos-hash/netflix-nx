@@ -28,7 +28,7 @@ jobs:
         run: |
           mkdir -p out/switch/netflix-player
           cp netflix-player.nro out/switch/netflix-player/
-          cp sdcard/switch/netflix-player/videos.json out/switch/netflix-player/
+          cp videos.json out/switch/netflix-player/ || true
 
       - uses: actions/upload-artifact@v4
         with:
