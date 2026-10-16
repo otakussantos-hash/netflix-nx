@@ -160,13 +160,17 @@ static bool stale(Stream* S, uint64_t g) {
     return S->gen != g || S->quit;
 }
 // Baixa a partir de "start"; se a conexao cair, retoma de onde parou.
+// So conta como "falha" a conexao que nao trouxe nenhum byte novo: o servidor fecha conexoes
+// paradas (buffer cheio) de tempos em tempos e isso e normal, reconecta na hora sem limite.
 static bool transfer(Stream* S, int64_t start, uint64_t g) {
     Xfer x;
     x.S = S;
     x.g = g;
-    for (int attempt = 0; attempt < 6; attempt++) {
+    int fails = 0;
+    for (;;) {
         int64_t from = start + x.received;
         if (S->info.size > 0 && from >= S->info.size) return true;
+        int64_t before = x.received;
         x.start = from;
         x.checked = x.bad = false;
         CURL* c = curl_easy_init();
@@ -188,14 +192,15 @@ static bool transfer(Stream* S, int64_t start, uint64_t g) {
         curl_easy_cleanup(c);
         if (stale(S, g)) return false;
         if (rc == CURLE_OK && !(S->info.size > 0 && start + x.received < S->info.size)) return true;
-        if (x.bad) return false;                           // HTTP 4xx/5xx: repetir nao adianta
+        if (x.bad) return false;                                // HTTP 4xx/5xx: repetir nao adianta
         if (!S->info.seekable && x.received > 0) return false;  // sem Range nao da para retomar
-        for (int i = 0; i < 10 * (attempt + 1); i++) {     // espera 1s, 2s, 3s... sem travar o cancelamento
+        if (x.received > before) { fails = 0; continue; }       // estava saudavel: reconecta ja
+        if (++fails > 5) return false;
+        for (int i = 0; i < 10 * fails; i++) {                  // espera 1s, 2s, 3s... sem travar o cancelamento
             if (stale(S, g)) return false;
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
-    return false;
 }
 static void worker(Stream* S) {
     std::unique_lock<std::mutex> lk(S->m);

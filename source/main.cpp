@@ -26,8 +26,13 @@
 // JSON online (GitHub raw). Edite o videos.json no repositorio e o app puxa daqui.
 #define JSON_URL "https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json"
 
+struct Episode { std::string titulo, url; };
+struct Season { std::string nome; std::vector<Episode> eps; };
 struct Item {
     std::string titulo, url, capa, cpath;  // cpath = capa em cache no SD
+    std::string sinopse, ano, genero, duracao;
+    std::vector<Season> seasons;           // vazio = filme (usa "url"); preenchido = serie
+    bool serie() const { return !seasons.empty(); }
     std::atomic<int> st{0};                // 0 = pendente, 1 = baixando, 2 = no disco, 3 = sem capa/falhou
     SDL_Texture* tex = nullptr;            // so existe enquanto o card esta visivel
 };
@@ -233,8 +238,34 @@ static bool load_items(std::vector<Item*>& items, std::string& err) {
         auto j = nlohmann::json::parse(buf.begin(), buf.end());
         for (auto& v : j.at("videos")) {
             auto* it = new Item;
+            auto str = [&](const char* k) -> std::string {  // texto ou numero (ex.: "ano": 2019)
+                if (!v.contains(k)) return "";
+                auto& x = v[k];
+                return x.is_string() ? x.get<std::string>() : x.dump();
+            };
             it->titulo = v.value("titulo", "Sem titulo");
-            it->url = fix_video(v.at("url").get<std::string>());
+            it->sinopse = str("sinopse");
+            it->ano = str("ano");
+            it->genero = str("genero");
+            it->duracao = str("duracao");
+            if (v.contains("temporadas") && v["temporadas"].is_array()) {
+                int sn = 0;
+                for (auto& t : v["temporadas"]) {
+                    Season se;
+                    se.nome = t.value("nome", "Temporada " + std::to_string(++sn));
+                    if (t.contains("episodios") && t["episodios"].is_array()) {
+                        int en = 0;
+                        for (auto& e : t["episodios"]) {
+                            Episode ep;
+                            ep.titulo = e.value("titulo", "Episodio " + std::to_string(++en));
+                            ep.url = fix_video(e.at("url").get<std::string>());
+                            se.eps.push_back(ep);
+                        }
+                    }
+                    it->seasons.push_back(se);
+                }
+            }
+            if (!it->serie()) it->url = fix_video(v.at("url").get<std::string>());
             it->capa = fix_cover(v.value("capa", ""));
             if (it->capa.empty()) it->st = 3;
             else {
@@ -308,7 +339,7 @@ static void draw_hero(SDL_Renderer* r, Item* it) {
         for (int i = 0; i < 48; i++) rect(r, 480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - i * 255 / 47);
         for (int i = 0; i < 60; i++) rect(r, 0, 300 + i, 1280, 1, 20, 20, 20, i * 255 / 59);
     }
-    txt(r, 1, "PLAYER", 48, 40, RED);
+    txt(r, 1, it->serie() ? "SERIE" : "FILME", 48, 40, RED);
     SDL_Rect clip{48, 110, 700, 80};
     SDL_RenderSetClipRect(r, &clip);
     txt(r, 2, it->titulo, 48, 110);
@@ -430,10 +461,55 @@ static std::string url_ext(const std::string& u) {
     return cs::lower(p.substr(dot));
 }
 
-static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
+// Clock da CPU em 1785 MHz durante o video (o padrao de homebrew e 1020 MHz e a decodificacao e por software).
+// Se o build reclamar de pcv/clkrst, compile com -DNO_CPU_BOOST.
+#ifndef NO_CPU_BOOST
+struct CpuBoost {
+    static constexpr u32 HZ = 1785000000u;
+    bool ok = false, clk = false;
+    ClkrstSession cs{};
+    u32 old = 1020000000u;
+    CpuBoost() {
+        u32 cur = 0;
+        if (hosversionAtLeast(8, 0, 0)) {
+            if (R_SUCCEEDED(clkrstInitialize())) {
+                if (R_SUCCEEDED(clkrstOpenSession(&cs, PcvModuleId_CpuBus, 3))) {
+                    if (R_SUCCEEDED(clkrstGetClockRate(&cs, &cur)) && cur) old = cur;
+                    if (R_SUCCEEDED(clkrstSetClockRate(&cs, HZ))) ok = clk = true;
+                    else clkrstCloseSession(&cs);
+                }
+                if (!ok) clkrstExit();
+            }
+        } else if (R_SUCCEEDED(pcvInitialize())) {
+            if (R_SUCCEEDED(pcvGetClockRate(PcvModule_CpuBus, &cur)) && cur) old = cur;
+            if (R_SUCCEEDED(pcvSetClockRate(PcvModule_CpuBus, HZ))) ok = true;
+            else pcvExit();
+        }
+    }
+    ~CpuBoost() {
+        if (!ok) return;
+        if (clk) { clkrstSetClockRate(&cs, old); clkrstCloseSession(&cs); clkrstExit(); }
+        else { pcvSetClockRate(PcvModule_CpuBus, old); pcvExit(); }
+    }
+};
+#else
+struct CpuBoost {};
+#endif
+
+// Devolve true se o video terminou sozinho (para passar ao proximo episodio).
+static bool play(SDL_Renderer* ren, PadState& pad, const std::string& title, const std::string& itemUrl) {
     PlayGuard guard;
+    CpuBoost boost;
+    bool ended = false;
     FILE* lg = fopen(BASE "log.txt", "w");  // diagnostico: sdmc:/switch/netflix-player/log.txt
-    auto log = [&](const std::string& s) { if (lg) { fputs(s.c_str(), lg); fputc('\n', lg); fflush(lg); } };
+    size_t logBytes = 0;
+    auto log = [&](const std::string& s, bool flush = true) {
+        if (!lg || logBytes > 200000) return;  // o log nao cresce sem limite durante um filme longo
+        logBytes += s.size() + 1;
+        fputs(s.c_str(), lg);
+        fputc('\n', lg);
+        if (flush) fflush(lg);
+    };
     struct LogClose { FILE*& f; ~LogClose() { if (f) fclose(f); } } logClose{lg};
     auto status = [&](const std::string& s) {
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
@@ -441,9 +517,9 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         txt(ren, 1, s, 48, 320);
         SDL_RenderPresent(ren);
     };
-    log("titulo: " + item->titulo);
+    log("titulo: " + title);
 
-    std::string playUrl = item->url;
+    std::string playUrl = itemUrl;
     if (playUrl.find("drive.usercontent.google.com") != std::string::npos) {
         status("Preparando link do Drive...");
         std::string e;
@@ -451,7 +527,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         if (r.empty()) {
             log("drive: " + e);
             show_msg(ren, pad, "Erro ao reproduzir", e);
-            return;
+            return false;
         }
         playUrl = r;
     }
@@ -473,7 +549,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
     }
 
     mpv_handle* mpv = mpv_create();
-    if (!mpv) { show_msg(ren, pad, "Erro no player", "mpv_create falhou (memoria insuficiente?)"); return; }
+    if (!mpv) { show_msg(ren, pad, "Erro no player", "mpv_create falhou (memoria insuficiente?)"); return false; }
     mpv_set_option_string(mpv, "vo", "libmpv");
     mpv_set_option_string(mpv, "hwdec", "no");
     mpv_set_option_string(mpv, "cache", "yes");
@@ -502,7 +578,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         log(std::string("mpv_initialize: ") + mpv_error_string(ir));
         mpv_terminate_destroy(mpv);
         show_msg(ren, pad, "Erro no player", std::string("mpv_initialize falhou: ") + mpv_error_string(ir));
-        return;
+        return false;
     }
     mpv_request_log_messages(mpv, "info");
 
@@ -514,7 +590,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         log(std::string("render_context_create: ") + mpv_error_string(rr));
         mpv_terminate_destroy(mpv);
         show_msg(ren, pad, "Erro no player", std::string("Render do mpv falhou: ") + mpv_error_string(rr));
-        return;
+        return false;
     }
 
     const int W = 960, H = 540;  // renderiza em 540p e o SDL escala para 720p
@@ -553,11 +629,14 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
             mpv_event* e = mpv_wait_event(mpv, 0);
             if (e->event_id == MPV_EVENT_NONE) break;
             if (e->event_id == MPV_EVENT_SHUTDOWN) run = false;
-            if (e->event_id == MPV_EVENT_FILE_LOADED || e->event_id == MPV_EVENT_PLAYBACK_RESTART) started = true;
+            if (e->event_id == MPV_EVENT_FILE_LOADED || e->event_id == MPV_EVENT_PLAYBACK_RESTART) {
+                if (!started) mpv_request_log_messages(mpv, "warn");  // tocando: so avisos/erros
+                started = true;
+            }
             if (e->event_id == MPV_EVENT_LOG_MESSAGE) {
                 auto* m = (mpv_event_log_message*)e->data;
                 if (m && m->text) {
-                    log(std::string("[") + m->level + "] " + m->prefix + ": " + m->text);
+                    log(std::string("[") + m->level + "] " + m->prefix + ": " + m->text, !started);
                     if (!strcmp(m->level, "error") || !strcmp(m->level, "fatal")) {
                         lastLog = m->text;
                         while (!lastLog.empty() && (lastLog.back() == '\n' || lastLog.back() == '\r')) lastLog.pop_back();
@@ -572,6 +651,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
                 if (reason == MPV_END_FILE_REASON_ERROR) why = mpv_error_string(ef->error);
                 else if (reason == MPV_END_FILE_REASON_EOF && !started) why = "o servidor nao enviou dados do video";
                 log("fim: " + (why.empty() ? std::string("normal") : why));
+                if (reason == MPV_END_FILE_REASON_EOF && started) ended = true;
                 if (!why.empty() && !fellBack) {
                     // o modo curl falhou: tenta uma vez com o ffmpeg nativo do mpv
                     fellBack = true;
@@ -619,7 +699,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         } else if (wait) txt(ren, 1, "Carregando buffer...", 520, 340);
         if (pause || SDL_GetTicks() - ui < 3500) {
             rect(ren, 0, 600, 1280, 120, 0, 0, 0, 180);
-            txt(ren, 1, item->titulo, 48, 612);
+            txt(ren, 1, title, 48, 612);
             rect(ren, 48, 668, 1184, 6, 90, 90, 90, 255);
             if (dur > 0) rect(ren, 48, 668, (int)(1184 * std::min(1.0, pos / dur)), 6, 229, 9, 20, 255);
             txt(ren, 0, fmt(pos) + " / " + fmt(dur) + (pause ? "   PAUSADO" : ""), 48, 682, GRAY);
@@ -636,6 +716,107 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         if (!lastLog.empty() && lastLog != erro) m += "\n\nmpv: " + lastLog;
         m += "\n\nDetalhes em sdmc:/switch/netflix-player/log.txt";
         show_msg(ren, pad, "Erro ao reproduzir", m);
+    }
+    return ended;
+}
+
+// ---------- tela de detalhes (sinopse, temporadas e episodios) ----------
+static void detail(SDL_Renderer* ren, PadState& pad, Item* it) {
+    const int ROWS = 5;
+    int ss = 0, ep = 0, top = 0;
+    auto syn = wrap(it->sinopse.empty() ? "Sem descricao." : it->sinopse, 60);
+    std::string meta;
+    for (const std::string* p : {&it->ano, &it->genero, &it->duracao})
+        if (!p->empty()) meta += (meta.empty() ? "" : "  |  ") + *p;
+    if (it->serie())
+        meta += (meta.empty() ? "" : "  |  ") + std::to_string(it->seasons.size()) + (it->seasons.size() == 1 ? " temporada" : " temporadas");
+    const SDL_Color LIGHT{200, 200, 200, 255}, BLACK{0, 0, 0, 255};
+    bool dirty = true;
+    Uint32 last = 0;
+
+    while (appletMainLoop()) {
+        padUpdate(&pad);
+        u64 d = padGetButtonsDown(&pad);
+        if (d & HidNpadButton_B) return;
+        if (d) dirty = true;
+
+        if (!it->serie()) {
+            if (d & HidNpadButton_A) { play(ren, pad, it->titulo, it->url); dirty = true; }
+        } else {
+            int ns = (int)it->seasons.size();
+            if ((d & HidNpadButton_Left) && ss > 0) { ss--; ep = 0; top = 0; }
+            if ((d & HidNpadButton_Right) && ss + 1 < ns) { ss++; ep = 0; top = 0; }
+            int ne = (int)it->seasons[ss].eps.size();
+            if ((d & HidNpadButton_Up) && ep > 0) ep--;
+            if ((d & HidNpadButton_Down) && ep + 1 < ne) ep++;
+            if (ep < top) top = ep;
+            if (ep >= top + ROWS) top = ep - ROWS + 1;
+            if ((d & HidNpadButton_A) && ne > 0) {
+                for (;;) {  // ao terminar o episodio, passa para o proximo (inclusive na proxima temporada)
+                    auto& S = it->seasons[ss];
+                    std::string t = it->titulo + "  -  T" + std::to_string(ss + 1) + " E" + std::to_string(ep + 1) + "  " + S.eps[ep].titulo;
+                    if (!play(ren, pad, t, S.eps[ep].url)) break;
+                    if (ep + 1 < (int)S.eps.size()) ep++;
+                    else if (ss + 1 < ns && !it->seasons[ss + 1].eps.empty()) { ss++; ep = 0; }
+                    else break;
+                }
+                ne = (int)it->seasons[ss].eps.size();
+                if (ep < top) top = ep;
+                if (ep >= top + ROWS) top = ep - ROWS + 1;
+                dirty = true;
+            }
+        }
+
+        if (SDL_GetTicks() - last > 1000) dirty = true;  // refresh de seguranca (volta do menu HOME)
+        if (!dirty) { SDL_Delay(30); continue; }
+        dirty = false;
+        last = SDL_GetTicks();
+
+        SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+        SDL_RenderClear(ren);
+        if (it->tex) { SDL_Rect dr{480, 0, 800, 360}; SDL_RenderCopy(ren, it->tex, nullptr, &dr); }
+        if (OV) { SDL_Rect o{0, 0, 1280, 360}; SDL_RenderCopy(ren, OV, nullptr, &o); }
+        else rect(ren, 0, 0, 480, 360, 20, 20, 20, 255);
+
+        txt(ren, 1, it->serie() ? "SERIE" : "FILME", 48, 28, RED);
+        SDL_Rect clip{48, 60, 700, 70};
+        SDL_RenderSetClipRect(ren, &clip);
+        txt(ren, 2, it->titulo, 48, 60);
+        SDL_RenderSetClipRect(ren, nullptr);
+        txt(ren, 0, meta, 48, 136, GRAY);
+        int y = 170;
+        for (size_t i = 0; i < syn.size() && i < 7; i++, y += 24) txt(ren, 0, syn[i], 48, y, LIGHT);
+
+        if (!it->serie()) {
+            rect(ren, 48, 400, 220, 52, 255, 255, 255, 255);
+            txt(ren, 1, "A  Assistir", 68, 410, BLACK);
+            txt(ren, 0, "B  Voltar", 48, 690, GRAY);
+        } else {
+            int ns = (int)it->seasons.size();
+            int tfirst = std::max(0, std::min(ss - 2, ns - 5));  // abas de temporada (5 por vez)
+            for (int i = tfirst; i < std::min(ns, tfirst + 5); i++) {
+                int x = 48 + (i - tfirst) * 236;
+                bool sel = i == ss;
+                rect(ren, x, 372, 228, 40, sel ? 255 : 55, sel ? 255 : 55, sel ? 255 : 55, 255);
+                SDL_Rect c{x, 372, 228, 40};
+                SDL_RenderSetClipRect(ren, &c);
+                txt(ren, 1, it->seasons[i].nome, x + 12, 378, sel ? BLACK : WHITE);
+                SDL_RenderSetClipRect(ren, nullptr);
+            }
+            auto& S = it->seasons[ss];
+            if (S.eps.empty()) txt(ren, 1, "Nenhum episodio nesta temporada", 48, 440, GRAY);
+            for (int i = top; i < std::min((int)S.eps.size(), top + ROWS); i++) {
+                int ry = 424 + (i - top) * 52;
+                bool sel = i == ep;
+                rect(ren, 48, ry, 1184, 48, sel ? 255 : 40, sel ? 255 : 40, sel ? 255 : 40, 255);
+                SDL_Rect c{48, ry, 1184, 48};
+                SDL_RenderSetClipRect(ren, &c);
+                txt(ren, 1, std::to_string(i + 1) + "   " + S.eps[i].titulo, 64, ry + 10, sel ? BLACK : WHITE);
+                SDL_RenderSetClipRect(ren, nullptr);
+            }
+            txt(ren, 0, "Cima/Baixo episodio   Esq/Dir temporada   A assistir   B voltar", 48, 692, GRAY);
+        }
+        SDL_RenderPresent(ren);
     }
 }
 
@@ -691,7 +872,7 @@ int main() {
             col = std::max(0, std::min(col, counts[row] - 1));
             if (col < first[row]) first[row] = col;
             if (col > first[row] + 4) first[row] = col - 4;
-            if (d & HidNpadButton_A) { play(ren, pad, items[col]); dirty = true; }
+            if (d & HidNpadButton_A) { detail(ren, pad, items[col]); dirty = true; }
 
             // o que esta visivel agora (e um pouco a frente) tem prioridade nas capas
             std::vector<char> vis(n, 0);
