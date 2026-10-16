@@ -17,8 +17,8 @@ main{max-width:1180px;margin:auto;padding:12px 20px 60px;display:grid;grid-templ
 section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
 h2{margin:0 0 12px;font-size:16px}
 label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
-input,textarea{width:100%;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit}
-input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+input,textarea,select{width:100%;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit}
+input:focus,textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
 textarea{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;resize:vertical}
 button{background:var(--line);color:var(--tx);border:0;border-radius:6px;padding:8px 12px;font:inherit;cursor:pointer}
 button:hover{filter:brightness(1.15)}
@@ -29,6 +29,9 @@ button.sm{padding:5px 9px;font-size:13px}
 .item{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
 .item:first-of-type{border-top:0}
 .thumb{width:120px;height:68px;border-radius:6px;background:var(--bg) center/cover no-repeat;border:1px solid var(--line);display:grid;place-items:center;color:var(--mut);font-size:12px}
+.season{border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px}
+.ep{margin-top:6px;flex-wrap:nowrap}
+.ep input{min-width:0}
 .tools{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .warn{color:var(--warn);font-size:12.5px;margin-top:4px}
 .msg{margin-top:10px;font-size:13.5px;min-height:18px}
@@ -42,7 +45,7 @@ button.sm{padding:5px 9px;font-size:13px}
 <body>
 <header>
   <h1>Editor do videos.json</h1>
-  <p>Edite a lista de filmes, copie o JSON ou salve direto no repositório do GitHub.</p>
+  <p>Edite a lista de filmes e séries (sinopse, temporadas e episódios), copie o JSON ou salve direto no repositório do GitHub.</p>
 </header>
 <main>
   <section>
@@ -63,9 +66,9 @@ button.sm{padding:5px 9px;font-size:13px}
     </div>
     <div id="loadMsg" class="msg"></div>
 
-    <h2 style="margin-top:18px">Filmes <span id="count" style="color:var(--mut);font-weight:400"></span></h2>
+    <h2 style="margin-top:18px">Títulos <span id="count" style="color:var(--mut);font-weight:400"></span></h2>
     <div id="list"></div>
-    <div class="row" style="margin-top:12px"><button id="btnAdd" class="pri">Adicionar filme</button></div>
+    <div class="row" style="margin-top:12px"><button id="btnAdd" class="pri">Adicionar filme ou série</button></div>
   </section>
 
   <div class="side">
@@ -114,29 +117,67 @@ function coverSrc(u){
   return /^https?:\/\//.test(u || "") ? u : "";
 }
 function esc(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function norm(v){
+  v = v || {};
+  const st = x => (x === undefined || x === null) ? "" : String(x);
+  return {
+    titulo:st(v.titulo), url:st(v.url), capa:st(v.capa), sinopse:st(v.sinopse), ano:st(v.ano), genero:st(v.genero), duracao:st(v.duracao),
+    serie: typeof v.serie === "boolean" ? v.serie : Array.isArray(v.temporadas),
+    temporadas:(Array.isArray(v.temporadas)?v.temporadas:[]).map(t=>({nome:st(t&&t.nome), episodios:(Array.isArray(t&&t.episodios)?t.episodios:[]).map(e=>({titulo:st(e&&e.titulo), url:st(e&&e.url)}))}))
+  };
+}
+const okUrl = u => /^(https?:\/\/|gdrive:)/.test(u.trim()) || /^[A-Za-z0-9_-]{20,}$/.test(u.trim());
+function urlWarn(u, w, what){
+  if(!u.trim()) w.push("Falta o link " + what + ".");
+  else if(/COLE_O_ID/.test(u)) w.push("O link " + what + " ainda é o exemplo.");
+  else if(!okUrl(u)) w.push("O link " + what + " deve começar com https:// ou gdrive:");
+}
 function warnings(it){
   const w = [];
   if(!it.titulo.trim()) w.push("Sem título.");
-  if(!it.url.trim()) w.push("Falta o link do vídeo.");
-  else if(/COLE_O_ID/.test(it.url)) w.push("O link do vídeo ainda é o exemplo.");
-  else if(!/^(https?:\/\/|gdrive:)/.test(it.url.trim()) && !/^[A-Za-z0-9_-]{20,}$/.test(it.url.trim())) w.push("O link deve começar com https:// ou gdrive:");
+  if(it.serie){
+    if(!it.temporadas.length) w.push("Adicione ao menos uma temporada.");
+    it.temporadas.forEach((t,si)=>{
+      if(!t.episodios.length) w.push("Temporada " + (si+1) + " sem episódios.");
+      t.episodios.forEach((e,ei)=>{ const x=[]; urlWarn(e.url,x,"do vídeo"); if(x.length) w.push("T"+(si+1)+" E"+(ei+1)+": "+x[0]); });
+    });
+  } else urlWarn(it.url, w, "do vídeo");
   if(/COLE_O_ID/.test(it.capa)) w.push("A capa ainda é o exemplo.");
   return w;
 }
 function toJSON(){
   const videos = items.map(i=>{
-    const o = {titulo:i.titulo.trim(), url:i.url.trim()};
+    const o = {titulo:i.titulo.trim()};
     if(i.capa.trim()) o.capa = i.capa.trim();
+    if(i.sinopse.trim()) o.sinopse = i.sinopse.trim();
+    if(i.ano.trim()) o.ano = i.ano.trim();
+    if(i.genero.trim()) o.genero = i.genero.trim();
+    if(i.duracao.trim()) o.duracao = i.duracao.trim();
+    if(i.serie) o.temporadas = i.temporadas.map((t,n)=>({nome:t.nome.trim()||("Temporada "+(n+1)), episodios:t.episodios.map((e,k)=>({titulo:e.titulo.trim()||("Episódio "+(k+1)), url:e.url.trim()}))}));
+    else o.url = i.url.trim();
     return o;
   });
   return JSON.stringify({videos}, null, 2) + "\n";
 }
 function msg(id, text, kind){const e=$(id); e.textContent=text; e.className="msg "+(kind||"");}
 
+function seasonsHTML(it){
+  return it.temporadas.map((t,si)=>
+    '<div class="season">'
+    + '<div class="row"><input data-f="snome" data-s="'+si+'" placeholder="Temporada '+(si+1)+'" value="'+esc(t.nome)+'" aria-label="Nome da temporada">'
+    + '<button class="sm" data-a="sdel" data-s="'+si+'">Remover temporada</button></div>'
+    + t.episodios.map((e,ei)=>
+        '<div class="row ep"><input data-f="etitulo" data-s="'+si+'" data-e="'+ei+'" placeholder="Episódio '+(ei+1)+'" value="'+esc(e.titulo)+'" aria-label="Título do episódio" style="flex:1">'
+        + '<input data-f="eurl" data-s="'+si+'" data-e="'+ei+'" placeholder="Link ou gdrive:ID" value="'+esc(e.url)+'" aria-label="Link do episódio" style="flex:2">'
+        + '<button class="sm" data-a="edel" data-s="'+si+'" data-e="'+ei+'" aria-label="Remover episódio">×</button></div>').join("")
+    + '<div class="tools"><button class="sm" data-a="eadd" data-s="'+si+'">+ Episódio</button></div>'
+    + '</div>').join("")
+    + '<div class="tools"><button class="sm" data-a="sadd">+ Temporada</button></div>';
+}
 function render(){
   const list = $("list");
   if(!items.length){
-    list.innerHTML = '<div class="empty">Nenhum filme ainda. Carregue o JSON ou adicione o primeiro.</div>';
+    list.innerHTML = '<div class="empty">Nenhum título ainda. Carregue o JSON ou adicione o primeiro.</div>';
   } else {
     list.innerHTML = items.map((it,i)=>{
       const src = coverSrc(it.capa);
@@ -144,9 +185,17 @@ function render(){
       return '<div class="item" data-i="'+i+'">'
         + '<div class="thumb" style="'+(src?'background-image:url(&quot;'+esc(src)+'&quot;)':'')+'">'+(src?'':'sem capa')+'</div>'
         + '<div>'
+        + '<label>Tipo</label><select data-f="serie"><option value="0"'+(it.serie?'':' selected')+'>Filme</option><option value="1"'+(it.serie?' selected':'')+'>Série</option></select>'
         + '<label>Título</label><input data-f="titulo" value="'+esc(it.titulo)+'">'
-        + '<label>Link do vídeo (mp4, mkv, m3u8, Drive ou gdrive:ID)</label><input data-f="url" value="'+esc(it.url)+'">'
+        + (it.serie ? '<label>Temporadas e episódios (link: mp4, mkv, m3u8, Drive ou gdrive:ID)</label>'+seasonsHTML(it)
+                    : '<label>Link do vídeo (mp4, mkv, m3u8, Drive ou gdrive:ID)</label><input data-f="url" value="'+esc(it.url)+'">')
         + '<label>Link da capa (opcional)</label><input data-f="capa" value="'+esc(it.capa)+'">'
+        + '<label>Sinopse (opcional)</label><textarea data-f="sinopse" rows="3" style="font-family:inherit;font-size:inherit">'+esc(it.sinopse)+'</textarea>'
+        + '<div class="row" style="margin-top:6px;align-items:flex-end">'
+        + '<div style="flex:1;min-width:90px"><label>Ano</label><input data-f="ano" value="'+esc(it.ano)+'"></div>'
+        + '<div style="flex:2;min-width:140px"><label>Gênero</label><input data-f="genero" value="'+esc(it.genero)+'"></div>'
+        + (it.serie ? '' : '<div style="flex:1;min-width:110px"><label>Duração</label><input data-f="duracao" placeholder="1h 52min" value="'+esc(it.duracao)+'"></div>')
+        + '</div>'
         + '<div class="w">'+w+'</div>'
         + '<div class="tools">'
         + '<button class="sm" data-a="up"'+(i===0?' disabled':'')+'>Subir</button>'
@@ -165,32 +214,45 @@ function updateOut(){
 }
 
 $("list").addEventListener("input", e=>{
-  const row = e.target.closest(".item"); if(!row || !e.target.dataset.f) return;
-  const it = items[+row.dataset.i];
-  it[e.target.dataset.f] = e.target.value;
+  const row = e.target.closest(".item"); const f = e.target.dataset.f; if(!row || !f || f==="serie") return;
+  const it = items[+row.dataset.i], v = e.target.value, d = e.target.dataset;
+  if(f==="snome") it.temporadas[+d.s].nome = v;
+  else if(f==="etitulo") it.temporadas[+d.s].episodios[+d.e].titulo = v;
+  else if(f==="eurl") it.temporadas[+d.s].episodios[+d.e].url = v;
+  else it[f] = v;
   row.querySelector(".w").innerHTML = warnings(it).map(t=>'<div class="warn">'+esc(t)+'</div>').join("");
   updateOut();
 });
 $("list").addEventListener("change", e=>{
-  if(e.target.dataset.f === "capa") render();
+  const row = e.target.closest(".item"); if(!row) return;
+  const it = items[+row.dataset.i];
+  if(e.target.dataset.f === "serie"){
+    it.serie = e.target.value === "1";
+    if(it.serie && !it.temporadas.length) it.temporadas.push({nome:"", episodios:[{titulo:"", url:""}]});
+    render();
+  } else if(e.target.dataset.f === "capa") render();
 });
 $("list").addEventListener("click", e=>{
   const b = e.target.closest("button[data-a]"); if(!b) return;
-  const i = +b.closest(".item").dataset.i, a = b.dataset.a;
+  const i = +b.closest(".item").dataset.i, a = b.dataset.a, it = items[i], s = +b.dataset.s, k = +b.dataset.e;
   if(a==="up" && i>0) [items[i-1],items[i]]=[items[i],items[i-1]];
   if(a==="down" && i<items.length-1) [items[i+1],items[i]]=[items[i],items[i+1]];
-  if(a==="dup") items.splice(i+1,0,{...items[i]});
-  if(a==="del" && confirm("Remover \"" + (items[i].titulo || "este filme") + "\"?")) items.splice(i,1);
+  if(a==="dup") items.splice(i+1,0,JSON.parse(JSON.stringify(it)));
+  if(a==="del" && confirm("Remover \"" + (it.titulo || "este título") + "\"?")) items.splice(i,1);
+  if(a==="sadd") it.temporadas.push({nome:"", episodios:[{titulo:"", url:""}]});
+  if(a==="sdel" && confirm("Remover esta temporada e seus episódios?")) it.temporadas.splice(s,1);
+  if(a==="eadd") it.temporadas[s].episodios.push({titulo:"", url:""});
+  if(a==="edel") it.temporadas[s].episodios.splice(k,1);
   render();
 });
-$("btnAdd").onclick = ()=>{ items.push({titulo:"",url:"",capa:""}); render(); const l=$("list").querySelectorAll(".item"); const last=l[l.length-1]; if(last){last.scrollIntoView({block:"center"}); last.querySelector("input").focus();} };
+$("btnAdd").onclick = ()=>{ items.push(norm({})); render(); const l=$("list").querySelectorAll(".item"); const last=l[l.length-1]; if(last){last.scrollIntoView({block:"center"}); last.querySelector("input").focus();} };
 
 function loadData(text){
   let j;
   try{ j = JSON.parse(text); }catch(e){ throw new Error("JSON inválido: " + e.message); }
   const arr = Array.isArray(j) ? j : j.videos;
   if(!Array.isArray(arr)) throw new Error('O JSON precisa ter a lista "videos".');
-  items = arr.map(v=>({titulo:String(v.titulo||""), url:String(v.url||""), capa:String(v.capa||"")}));
+  items = arr.map(norm);
   render();
 }
 $("btnLoad").onclick = async ()=>{
@@ -200,7 +262,7 @@ $("btnLoad").onclick = async ()=>{
     const r = await fetch(u + (u.includes("?")?"&":"?") + "t=" + Date.now(), {cache:"no-store"});
     if(!r.ok) throw new Error("GitHub respondeu " + r.status + (r.status===404?" (o repositório é público e o arquivo existe?)":""));
     loadData(await r.text());
-    msg("loadMsg", items.length + " filme(s) carregado(s).", "ok");
+    msg("loadMsg", items.length + " título(s) carregado(s).", "ok");
   }catch(e){ msg("loadMsg", e.message, "err"); }
 };
 $("btnFile").onclick = ()=>$("file").click();
@@ -230,7 +292,7 @@ $("btnSave").onclick = async ()=>{
   const repo=$("repo").value.trim(), branch=$("branch").value.trim()||"main", path=$("path").value.trim(), token=$("token").value.trim();
   if(!repo||!path||!token){ msg("saveMsg","Preencha repositório, arquivo e token.","err"); return; }
   const bad = items.filter(i=>warnings(i).length).length;
-  if(bad && !confirm(bad + " filme(s) com aviso (link vazio ou de exemplo). Salvar mesmo assim?")) return;
+  if(bad && !confirm(bad + " título(s) com aviso (link vazio ou de exemplo). Salvar mesmo assim?")) return;
   msg("saveMsg","Salvando…");
   const api = "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
   const H = {"Authorization":"Bearer "+token, "Accept":"application/vnd.github+json"};
@@ -249,7 +311,7 @@ $("btnSave").onclick = async ()=>{
 
 try{
   const d = JSON.parse(localStorage.getItem("netflix-nx-draft")||"null");
-  if(Array.isArray(d) && d.length){ items = d; msg("loadMsg","Rascunho anterior restaurado. Use \"Carregar do GitHub\" para partir da versão publicada."); }
+  if(Array.isArray(d) && d.length){ items = d.map(norm); msg("loadMsg","Rascunho anterior restaurado. Use \"Carregar do GitHub\" para partir da versão publicada."); }
 }catch(e){}
 render();
 </script>

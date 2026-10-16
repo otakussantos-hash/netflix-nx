@@ -58,7 +58,7 @@ function rect(x, y, w, h, r, g, b, a) { ctx.fillStyle = `rgba(${r},${g},${b},${a
 function clear(r, g, b) { rect(0, 0, W, H, r, g, b, 255); }
 function txt(f, s, x, y, c = WHITE) {
   if (!s) return;
-  ctx.font = FS[f] + "px " + FONT; ctx.textBaseline = "top";
+  ctx.font = FS[f] + "px " + FONT; ctx.textBaseline = "etop";
   ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${c[3]/255})`; ctx.fillText(s, x, y);
 }
 function clip(x, y, w, h) { ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip(); }
@@ -106,8 +106,17 @@ async function load() {
     const vs = JSON.parse(text).videos;
     if (!Array.isArray(vs)) throw 0;
     for (const v of vs) {
-      if (typeof v.url !== "string") throw 0;
-      items.push({ titulo: String(v.titulo ?? "Sem titulo"), url: fixVideo(v.url), capa: fixCover(String(v.capa ?? "")), img: null });
+      const st = k => v[k] === undefined || v[k] === null ? "" : String(v[k]);
+      const it = { titulo: String(v.titulo ?? "Sem titulo"), url: "", capa: fixCover(String(v.capa ?? "")), img: null,
+                   sinopse: st("sinopse"), ano: st("ano"), genero: st("genero"), duracao: st("duracao"), seasons: [] };
+      if (Array.isArray(v.temporadas)) {
+        v.temporadas.forEach((t, si) => it.seasons.push({ nome: String(t.nome ?? "Temporada " + (si + 1)),
+          eps: (Array.isArray(t.episodios) ? t.episodios : []).map((e, ei) => ({ titulo: String(e.titulo ?? "Episodio " + (ei + 1)), url: fixVideo(String(e.url)) })) }));
+      } else {
+        if (typeof v.url !== "string") throw 0;
+        it.url = fixVideo(v.url);
+      }
+      items.push(it);
     }
   } catch (e) { items = []; err = "JSON invalido"; mode = "menu"; return; }
   if (!items.length) { err = "Nenhum video no JSON"; mode = "menu"; return; }
@@ -128,7 +137,7 @@ function drawHero(it) {
   rect(0, 0, 480, 360, 20, 20, 20, 255);
   for (let i = 0; i < 48; i++) rect(480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - Math.floor(i * 255 / 47));
   for (let i = 0; i < 60; i++) rect(0, 300 + i, 1280, 1, 20, 20, 20, Math.floor(i * 255 / 59));
-  txt(1, "PLAYER", 48, 40, RED);
+  txt(1, it.seasons.length ? "SERIE" : "FILME", 48, 40, RED);
   clip(48, 110, 700, 80); txt(2, it.titulo, 48, 110); unclip();
   rect(48, 230, 190, 52, 255, 255, 255, 255);
   txt(1, "A  Assistir", 68, 240, BLACK);
@@ -165,7 +174,7 @@ function menu(d) {
   col = Math.max(0, Math.min(col, counts[row] - 1));
   if (col < first[row]) first[row] = col;
   if (col > first[row] + 4) first[row] = col - 4;
-  if (d.a) { startPlay(items[col]); return; }
+  if (d.a) { startDetail(items[col]); return; }
   drawHero(items[col]);
   const labels = ["Novidades", "Todos os titulos"], ly = [366, 538], cy = [402, 572];
   for (let r = 0; r < 2; r++) {
@@ -175,22 +184,98 @@ function menu(d) {
   }
 }
 
+// ---------- detalhes ----------
+function wrap(s, width) {
+  const out = []; let line = "";
+  for (const para of s.split("\n")) {
+    for (let w of para.split(" ")) {
+      if (!w) continue;
+      if (line && line.length + 1 + w.length > width) { out.push(line); line = ""; }
+      while (w.length > width) { out.push(w.slice(0, width)); w = w.slice(width); }
+      line += (line ? " " : "") + w;
+    }
+    out.push(line); line = "";
+  }
+  while (out.length && !out[out.length - 1]) out.pop();
+  return out;
+}
+let dit = null, ss = 0, ep = 0, etop = 0;
+const ROWS = 5, LIGHT = [200,200,200,255];
+function startDetail(it) { dit = it; ss = ep = etop = 0; mode = "detail"; }
+function playEp() {
+  const S = dit.seasons[ss];
+  startPlay(`${dit.titulo}  -  T${ss + 1} E${ep + 1}  ${S.eps[ep].titulo}`, S.eps[ep].url);
+}
+function detail(d) {
+  if (d.b) { mode = "menu"; return; }
+  const it = dit, serie = it.seasons.length > 0;
+  if (!serie) { if (d.a) { startPlay(it.titulo, it.url); return; } }
+  else {
+    const ns = it.seasons.length;
+    if (d.left && ss > 0) { ss--; ep = 0; etop = 0; }
+    if (d.right && ss + 1 < ns) { ss++; ep = 0; etop = 0; }
+    const ne = it.seasons[ss].eps.length;
+    if (d.up && ep > 0) ep--;
+    if (d.down && ep + 1 < ne) ep++;
+    if (ep < etop) etop = ep;
+    if (ep >= etop + ROWS) etop = ep - ROWS + 1;
+    if (d.a && ne > 0) { playEp(); return; }
+  }
+  clear(20, 20, 20);
+  if (it.img) ctx.drawImage(it.img, 480, 0, 800, 360);
+  rect(0, 0, 480, 360, 20, 20, 20, 255);
+  for (let i = 0; i < 48; i++) rect(480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - Math.floor(i * 255 / 47));
+  for (let i = 0; i < 60; i++) rect(0, 300 + i, 1280, 1, 20, 20, 20, Math.floor(i * 255 / 59));
+  txt(1, serie ? "SERIE" : "FILME", 48, 28, RED);
+  clip(48, 60, 700, 70); txt(2, it.titulo, 48, 60); unclip();
+  let meta = [it.ano, it.genero, it.duracao].filter(Boolean).join("  |  ");
+  if (serie) meta += (meta ? "  |  " : "") + it.seasons.length + (it.seasons.length === 1 ? " temporada" : " temporadas");
+  txt(0, meta, 48, 136, GRAY);
+  wrap(it.sinopse || "Sem descricao.", 60).slice(0, 7).forEach((l, i) => txt(0, l, 48, 170 + i * 24, LIGHT));
+  if (!serie) {
+    rect(48, 400, 220, 52, 255, 255, 255, 255);
+    txt(1, "A  Assistir", 68, 410, BLACK);
+    txt(0, "B  Voltar", 48, 690, GRAY);
+  } else {
+    const ns = it.seasons.length, tfirst = Math.max(0, Math.min(ss - 2, ns - 5));
+    for (let i = tfirst; i < Math.min(ns, tfirst + 5); i++) {
+      const x = 48 + (i - tfirst) * 236, sel = i === ss, c = sel ? 255 : 55;
+      rect(x, 372, 228, 40, c, c, c, 255);
+      clip(x, 372, 228, 40); txt(1, it.seasons[i].nome, x + 12, 378, sel ? BLACK : WHITE); unclip();
+    }
+    const S = it.seasons[ss];
+    if (!S.eps.length) txt(1, "Nenhum episodio nesta temporada", 48, 440, GRAY);
+    for (let i = etop; i < Math.min(S.eps.length, etop + ROWS); i++) {
+      const ry = 424 + (i - etop) * 52, sel = i === ep, c = sel ? 255 : 40;
+      rect(48, ry, 1184, 48, c, c, c, 255);
+      clip(48, ry, 1184, 48); txt(1, `${i + 1}   ${S.eps[i].titulo}`, 64, ry + 10, sel ? BLACK : WHITE); unclip();
+    }
+    txt(0, "Cima/Baixo episodio   Esq/Dir temporada   A assistir   B voltar", 48, 692, GRAY);
+  }
+}
+
 // ---------- player ----------
 let vid = null, cur = null, paused = false, ui = 0, erro = "", waiting = false;
-function startPlay(it) {
-  cur = it; paused = false; erro = ""; waiting = true; ui = performance.now(); mode = "play";
+function startPlay(title, url) {
+  cur = { titulo: title }; paused = false; erro = ""; waiting = true; ui = performance.now(); mode = "play";
   vid = document.createElement("video");
-  vid.playsInline = true; vid.preload = "auto"; vid.src = it.url;
+  vid.playsInline = true; vid.preload = "auto"; vid.src = url;
   vid.onerror = () => { erro = "loading failed"; endPlay(); };
-  vid.onended = () => endPlay();
+  vid.onended = () => endPlay(true);
   vid.onwaiting = () => waiting = true;
   vid.onplaying = vid.oncanplay = () => waiting = false;
   vid.play().catch(() => {});
 }
-function endPlay() {
+function endPlay(ended) {
   if (!vid) return;
   vid.pause(); vid.removeAttribute("src"); vid.load(); vid = null;
-  if (erro) { mode = "err"; errUntil = performance.now() + 3000; } else mode = "menu";
+  if (erro) { mode = "err"; errUntil = performance.now() + 3000; return; }
+  mode = "detail";
+  if (ended && dit.seasons.length) {  // proximo episodio automaticamente
+    const S = dit.seasons[ss];
+    if (ep + 1 < S.eps.length) { ep++; playEp(); }
+    else if (ss + 1 < dit.seasons.length && dit.seasons[ss + 1].eps.length) { ss++; ep = 0; etop = 0; playEp(); }
+  }
 }
 function player(d, now) {
   if (d.b) { endPlay(); return; }
@@ -231,10 +316,11 @@ function frame(now) {
   if (mode === "boot") clear(0, 0, 0);
   else if (mode === "exited") { clear(0, 0, 0); txt(0, "App encerrado (+). Aperte A para abrir de novo.", 48, 680, GRAY); if (d.a) load(); }
   else if (mode === "menu") menu(d);
+  else if (mode === "detail") detail(d);
   else if (mode === "play") player(d, now);
   else if (mode === "err") {
     clear(20, 20, 20); txt(1, "Erro ao reproduzir: " + erro, 48, 320);
-    if (now > errUntil) mode = "menu";
+    if (now > errUntil) mode = "detail";
   }
   requestAnimationFrame(frame);
 }
