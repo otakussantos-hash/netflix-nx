@@ -8,6 +8,8 @@
 #include <mpv/client.h>
 #include <mpv/render.h>
 #include "json.hpp"
+#include "curlstream.h"
+#include <cctype>
 #include <algorithm>
 #include <atomic>
 #include <cstdio>
@@ -55,7 +57,7 @@ static bool http_get(const std::string& url, std::vector<uint8_t>& out) {
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 20L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, "NetflixPlayerNX/0.1");
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "NetflixPlayerNX/0.2");
     CURLcode r = curl_easy_perform(c);
     long code = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
@@ -84,7 +86,7 @@ static bool http_get_file(const std::string& url, const std::string& path, size_
     curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
     curl_easy_setopt(c, CURLOPT_TIMEOUT, 20L);
-    curl_easy_setopt(c, CURLOPT_USERAGENT, "NetflixPlayerNX/0.1");
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "NetflixPlayerNX/0.2");
     CURLcode r = curl_easy_perform(c);
     long code = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
@@ -97,8 +99,14 @@ static bool http_get_file(const std::string& url, const std::string& path, size_
 
 // ---------- Google Drive ----------
 // Aceita: drive.google.com/file/d/ID/view, open?id=ID, uc?id=ID ou "gdrive:ID"
+static bool bare_drive_id(const std::string& u) {  // so o ID colado no JSON, sem "gdrive:"
+    if (u.size() < 20) return false;
+    for (char c : u) if (!isalnum((unsigned char)c) && c != '_' && c != '-') return false;
+    return true;
+}
 static std::string drive_id(const std::string& u) {
     if (u.rfind("gdrive:", 0) == 0) return u.substr(7);
+    if (bare_drive_id(u)) return u;
     if (u.find("drive.google.com") == std::string::npos &&
         u.find("drive.usercontent.google.com") == std::string::npos) return "";
     size_t s, p = u.find("/d/");
@@ -373,28 +381,99 @@ static bool manage_tex(SDL_Renderer* r, std::vector<Item*>& items, const std::ve
 
 // ---------- player (mpv) ----------
 struct PlayGuard { PlayGuard() { g_play = true; } ~PlayGuard() { g_play = false; } };
-static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
-    PlayGuard guard;
-    std::string playUrl = item->url;
-    if (playUrl.find("drive.usercontent.google.com") != std::string::npos) {
+
+// Quebra o texto em linhas que cabem na tela
+static std::vector<std::string> wrap(const std::string& s, size_t width) {
+    std::vector<std::string> out;
+    std::string line, word;
+    auto flush_word = [&]() {
+        if (word.empty()) return;
+        if (!line.empty() && line.size() + 1 + word.size() > width) { out.push_back(line); line.clear(); }
+        while (word.size() > width) { out.push_back(word.substr(0, width)); word.erase(0, width); }
+        line += (line.empty() ? "" : " ") + word;
+        word.clear();
+    };
+    for (char c : s) {
+        if (c == '\n') { flush_word(); out.push_back(line); line.clear(); }
+        else if (c == ' ') flush_word();
+        else word += c;
+    }
+    flush_word();
+    if (!line.empty()) out.push_back(line);
+    return out;
+}
+// Tela de aviso/erro. Fecha com A/B ou depois de "ms".
+static void show_msg(SDL_Renderer* ren, PadState& pad, const std::string& title, const std::string& msg, Uint32 ms = 12000) {
+    auto lines = wrap(msg, 62);
+    Uint32 t0 = SDL_GetTicks();
+    while (appletMainLoop() && SDL_GetTicks() - t0 < ms) {
+        padUpdate(&pad);
+        if (padGetButtonsDown(&pad) & (HidNpadButton_A | HidNpadButton_B)) break;
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
         SDL_RenderClear(ren);
-        txt(ren, 1, "Preparando link do Drive...", 48, 320);
+        txt(ren, 1, title, 48, 120, RED);
+        int y = 180;
+        for (auto& l : lines) { txt(ren, 1, l, 48, y); y += 34; if (y > 640) break; }
+        txt(ren, 0, "A / B  voltar", 48, 670, GRAY);
         SDL_RenderPresent(ren);
+        SDL_Delay(50);
+    }
+}
+static bool is_http(const std::string& u) { return u.rfind("http://", 0) == 0 || u.rfind("https://", 0) == 0; }
+static bool is_hls(const std::string& u) { return cs::lower(u).find(".m3u8") != std::string::npos; }
+// extensao do arquivo na URL (ajuda o mpv a escolher o demuxer)
+static std::string url_ext(const std::string& u) {
+    std::string p = u.substr(0, u.find_first_of("?#"));
+    size_t sl = p.find_last_of('/'), dot = p.find_last_of('.');
+    if (dot == std::string::npos || (sl != std::string::npos && dot < sl) || p.size() - dot > 6) return "";
+    for (size_t i = dot + 1; i < p.size(); i++) if (!isalnum((unsigned char)p[i])) return "";
+    return cs::lower(p.substr(dot));
+}
+
+static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
+    PlayGuard guard;
+    FILE* lg = fopen(BASE "log.txt", "w");  // diagnostico: sdmc:/switch/netflix-player/log.txt
+    auto log = [&](const std::string& s) { if (lg) { fputs(s.c_str(), lg); fputc('\n', lg); fflush(lg); } };
+    struct LogClose { FILE*& f; ~LogClose() { if (f) fclose(f); } } logClose{lg};
+    auto status = [&](const std::string& s) {
+        SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+        SDL_RenderClear(ren);
+        txt(ren, 1, s, 48, 320);
+        SDL_RenderPresent(ren);
+    };
+    log("titulo: " + item->titulo);
+
+    std::string playUrl = item->url;
+    if (playUrl.find("drive.usercontent.google.com") != std::string::npos) {
+        status("Preparando link do Drive...");
         std::string e;
         std::string r = resolve_drive(playUrl, e);
         if (r.empty()) {
-            SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
-            SDL_RenderClear(ren);
-            txt(ren, 1, "Erro ao reproduzir: " + e, 48, 320);
-            SDL_RenderPresent(ren);
-            SDL_Delay(4000);
+            log("drive: " + e);
+            show_msg(ren, pad, "Erro ao reproduzir", e);
             return;
         }
         playUrl = r;
     }
+
+    // HTTP/HTTPS comum: baixa pelo libcurl (funciona igual as capas). HLS (.m3u8) e outros: ffmpeg nativo.
+    status("Conectando...");
+    cs::Probe pr;
+    std::string curlErr;
+    bool useCurl = false;
+    if (is_http(playUrl) && !is_hls(playUrl)) {
+        if (cs::probe(playUrl, pr)) {
+            useCurl = true;
+            log("curl ok: http " + std::to_string(pr.code) + ", tamanho " + std::to_string((long long)pr.size) +
+                (pr.seekable ? ", seek ok" : ", sem seek"));
+        } else {
+            curlErr = pr.err;
+            log("curl falhou: " + pr.err + " (tentando modo nativo)");
+        }
+    }
+
     mpv_handle* mpv = mpv_create();
-    if (!mpv) return;
+    if (!mpv) { show_msg(ren, pad, "Erro no player", "mpv_create falhou (memoria insuficiente?)"); return; }
     mpv_set_option_string(mpv, "vo", "libmpv");
     mpv_set_option_string(mpv, "hwdec", "no");
     mpv_set_option_string(mpv, "cache", "yes");
@@ -414,26 +493,51 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
     mpv_set_option_string(mpv, "sws-scaler", "fast-bilinear");
     mpv_set_option_string(mpv, "cache-pause-wait", "4");
     mpv_set_option_string(mpv, "network-timeout", "15");
-    mpv_set_option_string(mpv, "user-agent", "NetflixPlayerNX/0.1");
+    mpv_set_option_string(mpv, "user-agent", "Mozilla/5.0 NetflixPlayerNX/0.2");
     mpv_set_option_string(mpv, "tls-verify", "no");
     mpv_set_option_string(mpv, "stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
     mpv_set_option_string(mpv, "terminal", "no");
-    if (mpv_initialize(mpv) < 0) { mpv_terminate_destroy(mpv); return; }
+    int ir = mpv_initialize(mpv);
+    if (ir < 0) {
+        log(std::string("mpv_initialize: ") + mpv_error_string(ir));
+        mpv_terminate_destroy(mpv);
+        show_msg(ren, pad, "Erro no player", std::string("mpv_initialize falhou: ") + mpv_error_string(ir));
+        return;
+    }
+    mpv_request_log_messages(mpv, "info");
 
     mpv_render_param ip[] = {{MPV_RENDER_PARAM_API_TYPE, (void*)MPV_RENDER_API_TYPE_SW},
                              {MPV_RENDER_PARAM_INVALID, nullptr}};
     mpv_render_context* rc = nullptr;
-    if (mpv_render_context_create(&rc, mpv, ip) < 0) { mpv_terminate_destroy(mpv); return; }
+    int rr = mpv_render_context_create(&rc, mpv, ip);
+    if (rr < 0) {
+        log(std::string("render_context_create: ") + mpv_error_string(rr));
+        mpv_terminate_destroy(mpv);
+        show_msg(ren, pad, "Erro no player", std::string("Render do mpv falhou: ") + mpv_error_string(rr));
+        return;
+    }
 
     const int W = 960, H = 540;  // renderiza em 540p e o SDL escala para 720p
     std::vector<uint8_t> px((size_t)W * H * 4, 0);
     SDL_Texture* tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XBGR8888, SDL_TEXTUREACCESS_STREAMING, W, H);
-    const char* cmd[] = {"loadfile", playUrl.c_str(), nullptr};
-    mpv_command(mpv, cmd);
+    SDL_UpdateTexture(tex, nullptr, px.data(), W * 4);
 
-    bool run = true;
-    std::string erro;
-    Uint32 ui = SDL_GetTicks();
+    auto load = [&](const std::string& target) {
+        const char* cmd[] = {"loadfile", target.c_str(), nullptr};
+        int r = mpv_command(mpv, cmd);
+        if (r < 0) log(std::string("loadfile: ") + mpv_error_string(r));
+    };
+    if (useCurl) {
+        int r = mpv_stream_cb_add_ro(mpv, "nxcurl", &pr, cs::cb_open);
+        if (r < 0) { log(std::string("stream_cb_add_ro: ") + mpv_error_string(r)); useCurl = false; }
+    }
+    if (useCurl) load("nxcurl://video" + url_ext(playUrl));
+    else load(playUrl);
+    log(useCurl ? "modo: curl" : "modo: nativo");
+
+    bool run = true, started = false, fellBack = !useCurl;  // fellBack: ja esta no modo nativo
+    std::string erro, lastLog;
+    Uint32 ui = SDL_GetTicks(), t0 = SDL_GetTicks();
     while (run && appletMainLoop()) {
         padUpdate(&pad);
         u64 d = padGetButtonsDown(&pad);
@@ -449,12 +553,42 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
             mpv_event* e = mpv_wait_event(mpv, 0);
             if (e->event_id == MPV_EVENT_NONE) break;
             if (e->event_id == MPV_EVENT_SHUTDOWN) run = false;
+            if (e->event_id == MPV_EVENT_FILE_LOADED || e->event_id == MPV_EVENT_PLAYBACK_RESTART) started = true;
+            if (e->event_id == MPV_EVENT_LOG_MESSAGE) {
+                auto* m = (mpv_event_log_message*)e->data;
+                if (m && m->text) {
+                    log(std::string("[") + m->level + "] " + m->prefix + ": " + m->text);
+                    if (!strcmp(m->level, "error") || !strcmp(m->level, "fatal")) {
+                        lastLog = m->text;
+                        while (!lastLog.empty() && (lastLog.back() == '\n' || lastLog.back() == '\r')) lastLog.pop_back();
+                    }
+                }
+            }
             if (e->event_id == MPV_EVENT_END_FILE) {
                 auto* ef = (mpv_event_end_file*)e->data;
-                if (ef && ef->reason == MPV_END_FILE_REASON_ERROR) erro = mpv_error_string(ef->error);
+                int reason = ef ? ef->reason : MPV_END_FILE_REASON_EOF;
+                if (reason == MPV_END_FILE_REASON_REDIRECT) continue;
+                std::string why;
+                if (reason == MPV_END_FILE_REASON_ERROR) why = mpv_error_string(ef->error);
+                else if (reason == MPV_END_FILE_REASON_EOF && !started) why = "o servidor nao enviou dados do video";
+                log("fim: " + (why.empty() ? std::string("normal") : why));
+                if (!why.empty() && !fellBack) {
+                    // o modo curl falhou: tenta uma vez com o ffmpeg nativo do mpv
+                    fellBack = true;
+                    curlErr = why;
+                    started = false;
+                    lastLog.clear();
+                    status("Tentando modo alternativo...");
+                    load(playUrl);
+                    t0 = SDL_GetTicks();
+                    log("modo: nativo (fallback)");
+                    continue;
+                }
+                if (!why.empty()) erro = (curlErr.empty() || curlErr == why) ? why : (why + " (curl: " + curlErr + ")");
                 run = false;
             }
         }
+        if (!started && !erro.size() && SDL_GetTicks() - t0 > 60000) { erro = "tempo esgotado ao abrir o video"; run = false; }
 
         if (mpv_render_context_update(rc) & MPV_RENDER_UPDATE_FRAME) {
             int sz[2] = {W, H};
@@ -479,7 +613,10 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         mpv_get_property(mpv, "pause", MPV_FORMAT_FLAG, &pause);
         mpv_get_property(mpv, "paused-for-cache", MPV_FORMAT_FLAG, &wait);
 
-        if (wait) txt(ren, 1, "Carregando buffer...", 520, 340);
+        if (!started) {
+            txt(ren, 1, "Conectando... " + std::to_string((SDL_GetTicks() - t0) / 1000) + "s", 48, 320);
+            txt(ren, 0, "B cancela", 48, 360, GRAY);
+        } else if (wait) txt(ren, 1, "Carregando buffer...", 520, 340);
         if (pause || SDL_GetTicks() - ui < 3500) {
             rect(ren, 0, 600, 1280, 120, 0, 0, 0, 180);
             txt(ren, 1, item->titulo, 48, 612);
@@ -490,26 +627,28 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
         SDL_RenderPresent(ren);
     }
 
-    if (!erro.empty()) {
-        SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
-        SDL_RenderClear(ren);
-        txt(ren, 1, "Erro ao reproduzir: " + erro, 48, 320);
-        SDL_RenderPresent(ren);
-        SDL_Delay(3000);
-    }
     mpv_render_context_free(rc);
     mpv_terminate_destroy(mpv);
     SDL_DestroyTexture(tex);
+
+    if (!erro.empty()) {
+        std::string m = erro;
+        if (!lastLog.empty() && lastLog != erro) m += "\n\nmpv: " + lastLog;
+        m += "\n\nDetalhes em sdmc:/switch/netflix-player/log.txt";
+        show_msg(ren, pad, "Erro ao reproduzir", m);
+    }
 }
 
 // ---------- main ----------
 int main() {
     socketInitializeDefault();
+    sslInitialize(0x3);  // servico SSL do Switch: o ffmpeg do mpv usa isto para HTTPS no modo nativo
     plInitialize(PlServiceType_User);
     padConfigureInput(1, HidNpadStyleSet_NpadStandard);
     PadState pad;
     padInitializeDefault(&pad);
     SDL_Init(SDL_INIT_VIDEO);
+    SDL_InitSubSystem(SDL_INIT_AUDIO);
     IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
     TTF_Init();
     curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -597,6 +736,6 @@ int main() {
     if (th.joinable()) th.join();
     curl_global_cleanup();
     TTF_Quit(); IMG_Quit(); SDL_Quit();
-    plExit(); socketExit();
+    plExit(); sslExit(); socketExit();
     return 0;
 }
