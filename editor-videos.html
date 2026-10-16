@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor do videos.json</title>
+<style>
+:root{--bg:#15171c;--panel:#1d2027;--line:#2c313b;--tx:#eceef2;--mut:#9aa1ae;--acc:#e5484d;--ok:#3fb27f;--warn:#e0a63a;color-scheme:dark}
+@media (prefers-color-scheme:light){:root{--bg:#f3f4f6;--panel:#fff;--line:#d9dce3;--tx:#1a1d24;--mut:#5d6573;color-scheme:light}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:22px 20px 8px;max-width:1180px;margin:auto}
+h1{margin:0;font-size:26px;letter-spacing:-.02em}
+header p{margin:4px 0 0;color:var(--mut)}
+main{max-width:1180px;margin:auto;padding:12px 20px 60px;display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:start}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+h2{margin:0 0 12px;font-size:16px}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,textarea{width:100%;background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit}
+input:focus,textarea:focus,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+textarea{font-family:ui-monospace,Consolas,monospace;font-size:12.5px;resize:vertical}
+button{background:var(--line);color:var(--tx);border:0;border-radius:6px;padding:8px 12px;font:inherit;cursor:pointer}
+button:hover{filter:brightness(1.15)}
+button.pri{background:var(--acc);color:#fff;font-weight:600}
+button.sm{padding:5px 9px;font-size:13px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.row>input{flex:1;min-width:180px}
+.item{display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+.item:first-of-type{border-top:0}
+.thumb{width:120px;height:68px;border-radius:6px;background:var(--bg) center/cover no-repeat;border:1px solid var(--line);display:grid;place-items:center;color:var(--mut);font-size:12px}
+.tools{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.warn{color:var(--warn);font-size:12.5px;margin-top:4px}
+.msg{margin-top:10px;font-size:13.5px;min-height:18px}
+.msg.ok{color:var(--ok)}.msg.err{color:var(--acc)}
+.empty{padding:26px 0;text-align:center;color:var(--mut)}
+.side{position:sticky;top:12px;display:grid;gap:20px}
+@media(max-width:900px){.side{position:static}}
+@media(max-width:520px){.item{grid-template-columns:1fr}.thumb{width:100%;height:120px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Editor do videos.json</h1>
+  <p>Edite a lista de filmes, copie o JSON ou salve direto no repositório do GitHub.</p>
+</header>
+<main>
+  <section>
+    <h2>Carregar</h2>
+    <div class="row">
+      <input id="rawUrl" value="https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json" aria-label="URL raw do videos.json">
+      <button id="btnLoad" class="pri">Carregar do GitHub</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button id="btnFile">Abrir arquivo…</button>
+      <button id="btnPaste">Colar JSON…</button>
+      <button id="btnNew">Começar do zero</button>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+    </div>
+    <div id="pasteBox" hidden style="margin-top:10px">
+      <textarea id="pasteTa" rows="6" placeholder='{"videos":[...]}'></textarea>
+      <div class="row" style="margin-top:6px"><button id="btnPasteOk" class="pri sm">Usar este JSON</button></div>
+    </div>
+    <div id="loadMsg" class="msg"></div>
+
+    <h2 style="margin-top:18px">Filmes <span id="count" style="color:var(--mut);font-weight:400"></span></h2>
+    <div id="list"></div>
+    <div class="row" style="margin-top:12px"><button id="btnAdd" class="pri">Adicionar filme</button></div>
+  </section>
+
+  <div class="side">
+    <section>
+      <h2>JSON gerado</h2>
+      <textarea id="out" rows="14" readonly></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="btnCopy" class="pri">Copiar</button>
+        <button id="btnDown">Baixar videos.json</button>
+      </div>
+      <div id="outMsg" class="msg"></div>
+    </section>
+
+    <section>
+      <h2>Salvar no GitHub</h2>
+      <label for="repo">Repositório</label>
+      <input id="repo" value="otakussantos-hash/netflix-nx">
+      <div class="row">
+        <div style="flex:1;min-width:120px"><label for="branch">Branch</label><input id="branch" value="main"></div>
+        <div style="flex:2;min-width:160px"><label for="path">Arquivo</label><input id="path" value="videos.json"></div>
+      </div>
+      <label for="token">Token (permissão Contents: leitura e escrita)</label>
+      <input id="token" type="password" autocomplete="off" placeholder="github_pat_...">
+      <div class="row" style="margin-top:10px"><button id="btnSave" class="pri">Salvar no GitHub</button></div>
+      <div id="saveMsg" class="msg"></div>
+      <p style="color:var(--mut);font-size:12.5px;margin:8px 0 0">O token fica só nesta página e não é guardado. Gere em GitHub &gt; Settings &gt; Developer settings &gt; Fine-grained tokens, limitado a este repositório.</p>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let items = [];
+
+function driveId(u){
+  if(!u) return "";
+  if(u.startsWith("gdrive:")) return u.slice(7).trim();
+  if(!/drive\.google\.com|drive\.usercontent\.google\.com/.test(u)) return "";
+  let m = u.match(/\/d\/([^\/?&#]+)/) || u.match(/[?&]id=([^&#]+)/);
+  return m ? m[1] : "";
+}
+function coverSrc(u){
+  const id = driveId(u);
+  if(id) return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w320";
+  return /^https?:\/\//.test(u || "") ? u : "";
+}
+function esc(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));}
+function warnings(it){
+  const w = [];
+  if(!it.titulo.trim()) w.push("Sem título.");
+  if(!it.url.trim()) w.push("Falta o link do vídeo.");
+  else if(/COLE_O_ID/.test(it.url)) w.push("O link do vídeo ainda é o exemplo.");
+  else if(!/^(https?:\/\/|gdrive:)/.test(it.url.trim())) w.push("O link deve começar com https:// ou gdrive:");
+  if(/COLE_O_ID/.test(it.capa)) w.push("A capa ainda é o exemplo.");
+  return w;
+}
+function toJSON(){
+  const videos = items.map(i=>{
+    const o = {titulo:i.titulo.trim(), url:i.url.trim()};
+    if(i.capa.trim()) o.capa = i.capa.trim();
+    return o;
+  });
+  return JSON.stringify({videos}, null, 2) + "\n";
+}
+function msg(id, text, kind){const e=$(id); e.textContent=text; e.className="msg "+(kind||"");}
+
+function render(){
+  const list = $("list");
+  if(!items.length){
+    list.innerHTML = '<div class="empty">Nenhum filme ainda. Carregue o JSON ou adicione o primeiro.</div>';
+  } else {
+    list.innerHTML = items.map((it,i)=>{
+      const src = coverSrc(it.capa);
+      const w = warnings(it).map(t=>'<div class="warn">'+esc(t)+'</div>').join("");
+      return '<div class="item" data-i="'+i+'">'
+        + '<div class="thumb" style="'+(src?'background-image:url(&quot;'+esc(src)+'&quot;)':'')+'">'+(src?'':'sem capa')+'</div>'
+        + '<div>'
+        + '<label>Título</label><input data-f="titulo" value="'+esc(it.titulo)+'">'
+        + '<label>Link do vídeo (mp4, mkv, m3u8, Drive ou gdrive:ID)</label><input data-f="url" value="'+esc(it.url)+'">'
+        + '<label>Link da capa (opcional)</label><input data-f="capa" value="'+esc(it.capa)+'">'
+        + '<div class="w">'+w+'</div>'
+        + '<div class="tools">'
+        + '<button class="sm" data-a="up"'+(i===0?' disabled':'')+'>Subir</button>'
+        + '<button class="sm" data-a="down"'+(i===items.length-1?' disabled':'')+'>Descer</button>'
+        + '<button class="sm" data-a="dup">Duplicar</button>'
+        + '<button class="sm" data-a="del">Remover</button>'
+        + '</div></div></div>';
+    }).join("");
+  }
+  $("count").textContent = items.length ? "(" + items.length + ")" : "";
+  updateOut();
+}
+function updateOut(){
+  $("out").value = toJSON();
+  try{ localStorage.setItem("netflix-nx-draft", JSON.stringify(items)); }catch(e){}
+}
+
+$("list").addEventListener("input", e=>{
+  const row = e.target.closest(".item"); if(!row || !e.target.dataset.f) return;
+  const it = items[+row.dataset.i];
+  it[e.target.dataset.f] = e.target.value;
+  row.querySelector(".w").innerHTML = warnings(it).map(t=>'<div class="warn">'+esc(t)+'</div>').join("");
+  updateOut();
+});
+$("list").addEventListener("change", e=>{
+  if(e.target.dataset.f === "capa") render();
+});
+$("list").addEventListener("click", e=>{
+  const b = e.target.closest("button[data-a]"); if(!b) return;
+  const i = +b.closest(".item").dataset.i, a = b.dataset.a;
+  if(a==="up" && i>0) [items[i-1],items[i]]=[items[i],items[i-1]];
+  if(a==="down" && i<items.length-1) [items[i+1],items[i]]=[items[i],items[i+1]];
+  if(a==="dup") items.splice(i+1,0,{...items[i]});
+  if(a==="del" && confirm("Remover \"" + (items[i].titulo || "este filme") + "\"?")) items.splice(i,1);
+  render();
+});
+$("btnAdd").onclick = ()=>{ items.push({titulo:"",url:"",capa:""}); render(); const l=$("list").querySelectorAll(".item"); const last=l[l.length-1]; if(last){last.scrollIntoView({block:"center"}); last.querySelector("input").focus();} };
+
+function loadData(text){
+  let j;
+  try{ j = JSON.parse(text); }catch(e){ throw new Error("JSON inválido: " + e.message); }
+  const arr = Array.isArray(j) ? j : j.videos;
+  if(!Array.isArray(arr)) throw new Error('O JSON precisa ter a lista "videos".');
+  items = arr.map(v=>({titulo:String(v.titulo||""), url:String(v.url||""), capa:String(v.capa||"")}));
+  render();
+}
+$("btnLoad").onclick = async ()=>{
+  msg("loadMsg","Carregando…");
+  try{
+    const u = $("rawUrl").value.trim();
+    const r = await fetch(u + (u.includes("?")?"&":"?") + "t=" + Date.now(), {cache:"no-store"});
+    if(!r.ok) throw new Error("GitHub respondeu " + r.status + (r.status===404?" (o repositório é público e o arquivo existe?)":""));
+    loadData(await r.text());
+    msg("loadMsg", items.length + " filme(s) carregado(s).", "ok");
+  }catch(e){ msg("loadMsg", e.message, "err"); }
+};
+$("btnFile").onclick = ()=>$("file").click();
+$("file").onchange = async e=>{
+  const f = e.target.files[0]; if(!f) return;
+  try{ loadData(await f.text()); msg("loadMsg","Arquivo aberto.","ok"); }catch(err){ msg("loadMsg",err.message,"err"); }
+  e.target.value = "";
+};
+$("btnPaste").onclick = ()=>{ $("pasteBox").hidden = !$("pasteBox").hidden; };
+$("btnPasteOk").onclick = ()=>{
+  try{ loadData($("pasteTa").value); $("pasteBox").hidden = true; msg("loadMsg","JSON aplicado.","ok"); }
+  catch(e){ msg("loadMsg", e.message, "err"); }
+};
+$("btnNew").onclick = ()=>{ if(!items.length || confirm("Descartar a lista atual?")){ items=[]; render(); msg("loadMsg",""); } };
+
+$("btnCopy").onclick = async ()=>{
+  try{ await navigator.clipboard.writeText(toJSON()); msg("outMsg","JSON copiado.","ok"); }
+  catch(e){ $("out").select(); msg("outMsg","Selecionei o texto: use Ctrl+C.","err"); }
+};
+$("btnDown").onclick = ()=>{
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([toJSON()],{type:"application/json"}));
+  a.download = "videos.json"; a.click(); URL.revokeObjectURL(a.href);
+};
+
+$("btnSave").onclick = async ()=>{
+  const repo=$("repo").value.trim(), branch=$("branch").value.trim()||"main", path=$("path").value.trim(), token=$("token").value.trim();
+  if(!repo||!path||!token){ msg("saveMsg","Preencha repositório, arquivo e token.","err"); return; }
+  const bad = items.filter(i=>warnings(i).length).length;
+  if(bad && !confirm(bad + " filme(s) com aviso (link vazio ou de exemplo). Salvar mesmo assim?")) return;
+  msg("saveMsg","Salvando…");
+  const api = "https://api.github.com/repos/" + repo + "/contents/" + path.split("/").map(encodeURIComponent).join("/");
+  const H = {"Authorization":"Bearer "+token, "Accept":"application/vnd.github+json"};
+  try{
+    let sha;
+    const g = await fetch(api + "?ref=" + encodeURIComponent(branch), {headers:H});
+    if(g.ok) sha = (await g.json()).sha;
+    else if(g.status!==404) throw new Error("Erro ao ler o arquivo: " + g.status + (g.status===401?" (token inválido)":""));
+    const body = {message:"Atualiza videos.json pelo editor", branch, content: btoa(unescape(encodeURIComponent(toJSON())))};
+    if(sha) body.sha = sha;
+    const p = await fetch(api, {method:"PUT", headers:{...H,"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    if(!p.ok){ const t = await p.json().catch(()=>({})); throw new Error("Falhou (" + p.status + "): " + (t.message||"erro desconhecido")); }
+    msg("saveMsg","Salvo! O app vai ver a mudança em alguns minutos.","ok");
+  }catch(e){ msg("saveMsg", e.message, "err"); }
+};
+
+try{
+  const d = JSON.parse(localStorage.getItem("netflix-nx-draft")||"null");
+  if(Array.isArray(d) && d.length){ items = d; msg("loadMsg","Rascunho anterior restaurado. Use \"Carregar do GitHub\" para partir da versão publicada."); }
+}catch(e){}
+render();
+</script>
+</body>
+</html>

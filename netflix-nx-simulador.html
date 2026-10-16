@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Netflix NX - simulador</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:#0b0b0d;color:#b8bcc6;font:14px/1.4 system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:12px}
+#stage{width:100%;max-width:1280px}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/9;background:#141414;outline:1px solid #26262b}
+.bar{width:100%;max-width:1280px;display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;align-items:center}
+.bar input{flex:1;min-width:220px;background:#16171b;color:#dfe2e8;border:1px solid #2a2c33;border-radius:6px;padding:7px 9px;font:inherit}
+button{background:#25272e;color:#e6e8ed;border:0;border-radius:6px;padding:8px 12px;font:inherit;cursor:pointer;user-select:none;touch-action:manipulation}
+button:active{background:#e50914}
+button:focus-visible,input:focus-visible{outline:2px solid #e50914;outline-offset:1px}
+.pad{display:flex;gap:26px;flex-wrap:wrap;justify-content:center;margin:6px 0}
+.grp{display:grid;grid-template-columns:repeat(3,52px);gap:6px}
+.grp button{padding:10px 0}
+.hint{max-width:1280px;color:#7d818c;font-size:12.5px;text-align:center}
+</style>
+</head>
+<body>
+<div class="bar">
+  <input id="url" aria-label="URL do videos.json" value="https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json">
+  <button id="reload">Recarregar JSON</button>
+  <button id="openLocal">Usar videos.json local…</button>
+  <button id="fs">Tela cheia</button>
+  <input type="file" id="file" accept=".json" hidden>
+</div>
+<div id="stage"><canvas id="cv" width="1280" height="720"></canvas></div>
+<div class="pad" aria-label="Controle">
+  <div class="grp">
+    <button data-b="zl">ZL</button><button data-b="up">&uarr;</button><button data-b="zr">ZR</button>
+    <button data-b="left">&larr;</button><button data-b="plus">+</button><button data-b="right">&rarr;</button>
+    <span></span><button data-b="down">&darr;</button><span></span>
+  </div>
+  <div class="grp">
+    <span></span><button disabled>X</button><span></span>
+    <button disabled>Y</button><span></span><button data-b="a">A</button>
+    <span></span><button data-b="b">B</button><span></span>
+  </div>
+</div>
+<p class="hint">Teclado: setas = direcional, Enter ou Z = A, Esc ou X = B, Q = ZL, E = ZR, P = +. Controle USB/Bluetooth também funciona.</p>
+
+<script>
+const JSON_URL = "https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json";
+const W = 1280, H = 720;
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const $ = id => document.getElementById(id);
+const FONT = '"Nintendo Switch","Segoe UI","Noto Sans",Roboto,Arial,sans-serif';
+const FS = [18, 26, 56];
+const WHITE = [255,255,255,255], GRAY = [170,170,170,255], RED = [229,9,20,255], BLACK = [0,0,0,255];
+
+// ---------- desenho (mesmas funcoes do main.cpp) ----------
+function rect(x, y, w, h, r, g, b, a) { ctx.fillStyle = `rgba(${r},${g},${b},${a/255})`; ctx.fillRect(x, y, w, h); }
+function clear(r, g, b) { rect(0, 0, W, H, r, g, b, 255); }
+function txt(f, s, x, y, c = WHITE) {
+  if (!s) return;
+  ctx.font = FS[f] + "px " + FONT; ctx.textBaseline = "top";
+  ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${c[3]/255})`; ctx.fillText(s, x, y);
+}
+function clip(x, y, w, h) { ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip(); }
+function unclip() { ctx.restore(); }
+function fmt(s) {
+  const t = Math.floor(s), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+  const p = n => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(sec)}` : `${m}:${p(sec)}`;
+}
+
+// ---------- Google Drive ----------
+function driveId(u) {
+  if (u.startsWith("gdrive:")) return u.slice(7);
+  if (!u.includes("drive.google.com") && !u.includes("drive.usercontent.google.com")) return "";
+  let s, p = u.indexOf("/d/");
+  if (p >= 0) s = p + 3;
+  else { p = u.indexOf("id="); if (p < 0) return ""; s = p + 3; }
+  const m = u.slice(s).search(/[\/?&#]/);
+  return m < 0 ? u.slice(s) : u.slice(s, s + m);
+}
+function fixVideo(u) { const id = driveId(u); return id ? `https://drive.usercontent.google.com/download?id=${id}&export=download&confirm=t` : u; }
+function fixCover(u) { const id = driveId(u); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w640` : u; }
+
+// ---------- estado ----------
+let items = [], ok = false, err = "", row = 0, col = 0, first = [0, 0];
+let mode = "boot", token = 0, localJson = null, errUntil = 0;
+let down = {};
+
+async function load() {
+  const tk = ++token;
+  mode = "boot"; items = []; ok = false; err = ""; row = col = 0; first = [0, 0];
+  const url = $("url").value.trim() || JSON_URL;
+  let text = null;
+  try {
+    const c = new AbortController(), t = setTimeout(() => c.abort(), 20000);
+    const r = await fetch(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now(), { signal: c.signal, cache: "no-store" });
+    clearTimeout(t);
+    if (r.ok) text = await r.text();
+  } catch (e) {}
+  if (!text || !text.trim()) text = localJson;  // reserva local, como o videos.json do SD
+  if (tk !== token) return;
+  if (!text) { err = "Falha ao baixar o JSON do GitHub (sem internet?)"; mode = "menu"; return; }
+  try {
+    const vs = JSON.parse(text).videos;
+    if (!Array.isArray(vs)) throw 0;
+    for (const v of vs) {
+      if (typeof v.url !== "string") throw 0;
+      items.push({ titulo: String(v.titulo ?? "Sem titulo"), url: fixVideo(v.url), capa: fixCover(String(v.capa ?? "")), img: null });
+    }
+  } catch (e) { items = []; err = "JSON invalido"; mode = "menu"; return; }
+  if (!items.length) { err = "Nenhum video no JSON"; mode = "menu"; return; }
+  ok = true; mode = "menu";
+  loadCovers(tk);
+}
+async function loadCovers(tk) {  // baixa as capas em sequencia, em segundo plano
+  for (const it of items) {
+    if (tk !== token) break;
+    if (!it.capa) continue;
+    await new Promise(res => { const im = new Image(); im.referrerPolicy = "no-referrer"; im.onload = () => { it.img = im; res(); }; im.onerror = res; im.src = it.capa; });
+  }
+}
+
+// ---------- telas ----------
+function drawHero(it) {
+  if (it.img) ctx.drawImage(it.img, 480, 0, 800, 360);
+  rect(0, 0, 480, 360, 20, 20, 20, 255);
+  for (let i = 0; i < 48; i++) rect(480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - Math.floor(i * 255 / 47));
+  for (let i = 0; i < 60; i++) rect(0, 300 + i, 1280, 1, 20, 20, 20, Math.floor(i * 255 / 59));
+  txt(1, "PLAYER", 48, 40, RED);
+  clip(48, 110, 700, 80); txt(2, it.titulo, 48, 110); unclip();
+  rect(48, 230, 190, 52, 255, 255, 255, 255);
+  txt(1, "A  Assistir", 68, 240, BLACK);
+}
+function drawCard(it, x, y, sel) {
+  let w = 220, h = 124;
+  if (sel) { x -= 8; y -= 8; w += 16; h += 16; }
+  rect(x, y, w, h, 50, 50, 50, 255);
+  if (it.img) ctx.drawImage(it.img, x, y, w, h);
+  clip(x, y, w, h);
+  rect(x, y + h - 30, w, 30, 0, 0, 0, 170);
+  txt(0, it.titulo, x + 8, y + h - 27);
+  unclip();
+  if (sel) for (let i = 0; i < 3; i++) {
+    const bx = x - i, by = y - i, bw = w + 2 * i, bh = h + 2 * i;
+    rect(bx, by, bw, 1, 255, 255, 255, 255); rect(bx, by + bh - 1, bw, 1, 255, 255, 255, 255);
+    rect(bx, by, 1, bh, 255, 255, 255, 255); rect(bx + bw - 1, by, 1, bh, 255, 255, 255, 255);
+  }
+}
+function menu(d) {
+  clear(20, 20, 20);
+  if (!ok) {
+    txt(1, err, 48, 320);
+    txt(0, "Coloque videos.json (ou videos_url.txt) em sdmc:/switch/netflix-player/  |  + sai", 48, 370, GRAY);
+    if (d.plus) mode = "exited";
+    return;
+  }
+  if (d.plus) { mode = "exited"; return; }
+  const n = items.length, counts = [Math.min(5, n), n];
+  if (d.up) row = 0;
+  if (d.down) row = 1;
+  if (d.left) col--;
+  if (d.right) col++;
+  col = Math.max(0, Math.min(col, counts[row] - 1));
+  if (col < first[row]) first[row] = col;
+  if (col > first[row] + 4) first[row] = col - 4;
+  if (d.a) { startPlay(items[col]); return; }
+  drawHero(items[col]);
+  const labels = ["Novidades", "Todos os titulos"], ly = [366, 538], cy = [402, 572];
+  for (let r = 0; r < 2; r++) {
+    txt(1, labels[r], 48, ly[r]);
+    for (let i = first[r]; i < Math.min(counts[r], first[r] + 5); i++)
+      drawCard(items[i], 48 + (i - first[r]) * 232, cy[r], r === row && i === col);
+  }
+}
+
+// ---------- player ----------
+let vid = null, cur = null, paused = false, ui = 0, erro = "", waiting = false;
+function startPlay(it) {
+  cur = it; paused = false; erro = ""; waiting = true; ui = performance.now(); mode = "play";
+  vid = document.createElement("video");
+  vid.playsInline = true; vid.preload = "auto"; vid.src = it.url;
+  vid.onerror = () => { erro = "loading failed"; endPlay(); };
+  vid.onended = () => endPlay();
+  vid.onwaiting = () => waiting = true;
+  vid.onplaying = vid.oncanplay = () => waiting = false;
+  vid.play().catch(() => {});
+}
+function endPlay() {
+  if (!vid) return;
+  vid.pause(); vid.removeAttribute("src"); vid.load(); vid = null;
+  if (erro) { mode = "err"; errUntil = performance.now() + 3000; } else mode = "menu";
+}
+function player(d, now) {
+  if (d.b) { endPlay(); return; }
+  const dur = vid && isFinite(vid.duration) ? vid.duration : 0;
+  const seek = s => { vid.currentTime = Math.max(0, Math.min(vid.currentTime + s, dur || 1e9)); ui = now; };
+  if (d.a) { paused = !paused; paused ? vid.pause() : vid.play().catch(() => {}); ui = now; }
+  if (d.left) seek(-10); if (d.right) seek(10); if (d.zl) seek(-60); if (d.zr) seek(60);
+  if (d.up || d.down) ui = now;
+  if (!vid) return;
+  clear(0, 0, 0);
+  if (vid.readyState >= 2) ctx.drawImage(vid, 0, 0, W, H);
+  const pos = vid.currentTime || 0;
+  if (waiting && !paused) txt(1, "Carregando buffer...", 520, 340);
+  if (paused || now - ui < 3500) {
+    rect(0, 600, 1280, 120, 0, 0, 0, 180);
+    txt(1, cur.titulo, 48, 612);
+    rect(48, 668, 1184, 6, 90, 90, 90, 255);
+    if (dur > 0) rect(48, 668, Math.floor(1184 * Math.min(1, pos / dur)), 6, 229, 9, 20, 255);
+    txt(0, fmt(pos) + " / " + fmt(dur) + (paused ? "   PAUSADO" : ""), 48, 682, GRAY);
+  }
+}
+
+// ---------- loop ----------
+const prevPad = {};
+function pollPad(d) {
+  const g = (navigator.getGamepads ? navigator.getGamepads() : []).find(p => p);
+  if (!g) return;
+  const map = { a: 1, b: 0, zl: 6, zr: 7, plus: 9, up: 12, down: 13, left: 14, right: 15 };
+  for (const k in map) {
+    const on = !!(g.buttons[map[k]] && g.buttons[map[k]].pressed);
+    if (on && !prevPad[k]) d[k] = true;
+    prevPad[k] = on;
+  }
+}
+function frame(now) {
+  const d = down; down = {};
+  pollPad(d);
+  if (mode === "boot") clear(0, 0, 0);
+  else if (mode === "exited") { clear(0, 0, 0); txt(0, "App encerrado (+). Aperte A para abrir de novo.", 48, 680, GRAY); if (d.a) load(); }
+  else if (mode === "menu") menu(d);
+  else if (mode === "play") player(d, now);
+  else if (mode === "err") {
+    clear(20, 20, 20); txt(1, "Erro ao reproduzir: " + erro, 48, 320);
+    if (now > errUntil) mode = "menu";
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- entrada ----------
+const KEYS = { arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", enter: "a", z: "a", escape: "b", backspace: "b", x: "b", q: "zl", e: "zr", p: "plus" };
+addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.repeat) return;
+  const k = KEYS[e.key.toLowerCase()];
+  if (k) { down[k] = true; e.preventDefault(); }
+});
+document.querySelectorAll("[data-b]").forEach(b => b.addEventListener("pointerdown", e => { e.preventDefault(); down[b.dataset.b] = true; }));
+$("reload").onclick = load;
+$("openLocal").onclick = () => $("file").click();
+$("file").onchange = async e => { const f = e.target.files[0]; if (f) { localJson = await f.text(); $("url").value = "local"; load(); } e.target.value = ""; };
+$("fs").onclick = () => $("stage").requestFullscreen && $("stage").requestFullscreen();
+
+load();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
