@@ -84,6 +84,85 @@ static std::string fix_cover(const std::string& u) {
     return "https://drive.google.com/thumbnail?id=" + id + "&sz=w640";
 }
 
+// Arquivos grandes do Drive passam por uma pagina de confirmacao (HTML).
+// Aqui a gente le essa pagina, monta o link final do download e avisa o motivo se o Drive negar.
+struct Cap { std::string s; size_t max; };
+static size_t cap_wr(void* p, size_t sz, size_t n, void* u) {
+    auto* c = (Cap*)u;
+    if (c->s.size() >= c->max) return 0;  // ja temos o suficiente: aborta o download
+    c->s.append((char*)p, sz * n);
+    return sz * n;
+}
+static std::string html_attr(const std::string& tag, const std::string& name) {
+    std::string k = name + "=\"";
+    size_t p = tag.find(k);
+    if (p == std::string::npos) return "";
+    p += k.size();
+    size_t e = tag.find('"', p);
+    return e == std::string::npos ? "" : tag.substr(p, e - p);
+}
+static std::string unamp(std::string s) {
+    for (size_t p; (p = s.find("&amp;")) != std::string::npos;) s.replace(p, 5, "&");
+    return s;
+}
+// Devolve a URL final para o mpv. Se der problema, devolve "" e preenche err.
+static std::string resolve_drive(const std::string& url, std::string& err) {
+    Cap cap{"", 262144};
+    CURL* c = curl_easy_init();
+    if (!c) { err = "curl indisponivel"; return ""; }
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, cap_wr);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &cap);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "Mozilla/5.0");
+    CURLcode r = curl_easy_perform(c);
+    char* ctp = nullptr;
+    curl_easy_getinfo(c, CURLINFO_CONTENT_TYPE, &ctp);
+    std::string ct = ctp ? ctp : "";
+    long code = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(c);
+
+    if (cap.s.empty() && r != CURLE_OK) { err = "Sem conexao com o Google Drive"; return ""; }
+    if (ct.find("text/html") == std::string::npos) return url;  // ja e o arquivo, o mpv le direto
+
+    if (cap.s.find("Too many users") != std::string::npos || cap.s.find("quota") != std::string::npos) {
+        err = "Drive: limite de downloads excedido (tente em 24h)";
+        return "";
+    }
+    size_t f = cap.s.find("id=\"download-form\"");
+    if (f == std::string::npos) {
+        err = "Drive negou o acesso: compartilhe como 'Qualquer pessoa com o link'";
+        return "";
+    }
+    size_t fs = cap.s.rfind("<form", f);
+    size_t fe = cap.s.find("</form>", f);
+    if (fs == std::string::npos || fe == std::string::npos) { err = "Pagina do Drive inesperada"; return ""; }
+    std::string form = cap.s.substr(fs, fe - fs);
+    std::string action = unamp(html_attr(form.substr(0, form.find('>')), "action"));
+    if (action.empty()) action = "https://drive.usercontent.google.com/download";
+
+    std::string q;
+    CURL* e = curl_easy_init();
+    for (size_t p = 0; (p = form.find("<input", p)) != std::string::npos;) {
+        size_t end = form.find('>', p);
+        if (end == std::string::npos) break;
+        std::string tag = form.substr(p, end - p);
+        p = end;
+        std::string name = html_attr(tag, "name");
+        if (name.empty()) continue;
+        std::string val = unamp(html_attr(tag, "value"));
+        char* enc = curl_easy_escape(e, val.c_str(), (int)val.size());
+        q += (q.empty() ? "" : "&") + name + "=" + (enc ? enc : "");
+        if (enc) curl_free(enc);
+    }
+    curl_easy_cleanup(e);
+    if (q.empty()) { err = "Pagina do Drive inesperada"; return ""; }
+    return action + "?" + q;
+}
+
 // ---------- JSON ----------
 static bool load_items(std::vector<Item*>& items, std::string& err) {
     std::vector<uint8_t> buf;
@@ -183,6 +262,24 @@ static void draw_card(SDL_Renderer* r, Item* it, int x, int y, bool sel) {
 
 // ---------- player (mpv) ----------
 static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
+    std::string playUrl = item->url;
+    if (playUrl.find("drive.usercontent.google.com") != std::string::npos) {
+        SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+        SDL_RenderClear(ren);
+        txt(ren, 1, "Preparando link do Drive...", 48, 320);
+        SDL_RenderPresent(ren);
+        std::string e;
+        std::string r = resolve_drive(playUrl, e);
+        if (r.empty()) {
+            SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
+            SDL_RenderClear(ren);
+            txt(ren, 1, "Erro ao reproduzir: " + e, 48, 320);
+            SDL_RenderPresent(ren);
+            SDL_Delay(4000);
+            return;
+        }
+        playUrl = r;
+    }
     mpv_handle* mpv = mpv_create();
     if (!mpv) return;
     mpv_set_option_string(mpv, "vo", "libmpv");
@@ -207,7 +304,7 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
     const int W = 960, H = 540;  // renderiza em 540p e o SDL escala para 720p
     std::vector<uint8_t> px((size_t)W * H * 4, 0);
     SDL_Texture* tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_XBGR8888, SDL_TEXTUREACCESS_STREAMING, W, H);
-    const char* cmd[] = {"loadfile", item->url.c_str(), nullptr};
+    const char* cmd[] = {"loadfile", playUrl.c_str(), nullptr};
     mpv_command(mpv, cmd);
 
     bool run = true;
