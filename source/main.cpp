@@ -14,6 +14,8 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <mutex>
+#include <sys/stat.h>
 #include <string>
 #include <thread>
 #include <vector>
@@ -23,16 +25,20 @@
 #define JSON_URL "https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json"
 
 struct Item {
-    std::string titulo, url, capa;
-    std::vector<uint8_t> data;
-    std::atomic<bool> ready{false};
-    SDL_Texture* tex = nullptr;
+    std::string titulo, url, capa, cpath;  // cpath = capa em cache no SD
+    std::atomic<int> st{0};                // 0 = pendente, 1 = baixando, 2 = no disco, 3 = sem capa/falhou
+    SDL_Texture* tex = nullptr;            // so existe enquanto o card esta visivel
 };
 
 static TTF_Font* F[3];  // 0 pequena, 1 media, 2 grande
 static const SDL_Color WHITE{255, 255, 255, 255}, GRAY{170, 170, 170, 255}, RED{229, 9, 20, 255};
 struct Tx { SDL_Texture* t; int w, h; };
 static std::map<std::string, Tx> TC;
+static SDL_Texture* OV = nullptr;            // degrade do destaque (1 textura pronta)
+static std::atomic<bool> g_play{false};      // true durante o video: pausa o download de capas
+static std::atomic<bool> g_quit{false};
+static std::mutex g_mx;
+static std::vector<int> g_want;              // capas que o app quer agora (visiveis primeiro)
 
 // ---------- rede ----------
 static size_t wr(void* p, size_t s, size_t n, void* u) {
@@ -55,6 +61,38 @@ static bool http_get(const std::string& url, std::vector<uint8_t>& out) {
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
     curl_easy_cleanup(c);
     return r == CURLE_OK && code < 400;
+}
+
+// Baixa direto para o SD (nao usa RAM) e limita o tamanho
+struct FileSink { FILE* f; size_t n, max; };
+static size_t wr_file(void* p, size_t sz, size_t n, void* u) {
+    auto* k = (FileSink*)u;
+    k->n += sz * n;
+    if (k->n > k->max) return 0;
+    return fwrite(p, sz, n, k->f) == n ? sz * n : 0;
+}
+static bool http_get_file(const std::string& url, const std::string& path, size_t maxBytes) {
+    std::string tmp = path + ".tmp";
+    FILE* f = fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+    FileSink k{f, 0, maxBytes};
+    CURL* c = curl_easy_init();
+    if (!c) { fclose(f); remove(tmp.c_str()); return false; }
+    curl_easy_setopt(c, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, wr_file);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &k);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_SSL_VERIFYPEER, 0L);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 20L);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "NetflixPlayerNX/0.1");
+    CURLcode r = curl_easy_perform(c);
+    long code = 0;
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(c);
+    fclose(f);
+    if (r != CURLE_OK || code >= 400 || k.n == 0) { remove(tmp.c_str()); return false; }
+    remove(path.c_str());
+    return rename(tmp.c_str(), path.c_str()) == 0;
 }
 
 // ---------- Google Drive ----------
@@ -190,6 +228,14 @@ static bool load_items(std::vector<Item*>& items, std::string& err) {
             it->titulo = v.value("titulo", "Sem titulo");
             it->url = fix_video(v.at("url").get<std::string>());
             it->capa = fix_cover(v.value("capa", ""));
+            if (it->capa.empty()) it->st = 3;
+            else {
+                char h[32];
+                snprintf(h, sizeof h, "%016zx", std::hash<std::string>{}(it->capa));
+                it->cpath = std::string(BASE "cache/") + h + ".img";
+                struct stat sb;
+                if (stat(it->cpath.c_str(), &sb) == 0 && sb.st_size > 0) it->st = 2;  // ja baixada antes
+            }
             items.push_back(it);
         }
     } catch (...) { err = "JSON invalido"; return false; }
@@ -227,11 +273,33 @@ static std::string fmt(double s) {
     return b;
 }
 
+// Mesmo degrade de antes (faixa lateral + base), mas montado 1 vez so em vez de 108 retangulos por quadro
+static SDL_Texture* make_overlay(SDL_Renderer* r) {
+    SDL_Surface* sf = SDL_CreateRGBSurfaceWithFormat(0, 1280, 360, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!sf) return nullptr;
+    for (int y = 0; y < 360; y++) {
+        int a2 = y >= 300 ? (y - 300) * 255 / 59 : 0;
+        for (int x = 0; x < 1280; x++) {
+            int a1 = x < 480 ? 255 : (x < 960 ? 255 - ((x - 480) / 10) * 255 / 47 : 0);
+            Uint8* px = (Uint8*)sf->pixels + y * sf->pitch + x * 4;
+            px[0] = px[1] = px[2] = 20;
+            px[3] = (Uint8)(255 - (255 - a1) * (255 - a2) / 255);
+        }
+    }
+    SDL_Texture* t = SDL_CreateTextureFromSurface(r, sf);
+    SDL_FreeSurface(sf);
+    if (t) SDL_SetTextureBlendMode(t, SDL_BLENDMODE_BLEND);
+    return t;
+}
+
 static void draw_hero(SDL_Renderer* r, Item* it) {
     if (it->tex) { SDL_Rect d{480, 0, 800, 360}; SDL_RenderCopy(r, it->tex, nullptr, &d); }
-    rect(r, 0, 0, 480, 360, 20, 20, 20, 255);
-    for (int i = 0; i < 48; i++) rect(r, 480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - i * 255 / 47);
-    for (int i = 0; i < 60; i++) rect(r, 0, 300 + i, 1280, 1, 20, 20, 20, i * 255 / 59);
+    if (OV) { SDL_Rect o{0, 0, 1280, 360}; SDL_RenderCopy(r, OV, nullptr, &o); }
+    else {
+        rect(r, 0, 0, 480, 360, 20, 20, 20, 255);
+        for (int i = 0; i < 48; i++) rect(r, 480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - i * 255 / 47);
+        for (int i = 0; i < 60; i++) rect(r, 0, 300 + i, 1280, 1, 20, 20, 20, i * 255 / 59);
+    }
     txt(r, 1, "PLAYER", 48, 40, RED);
     SDL_Rect clip{48, 110, 700, 80};
     SDL_RenderSetClipRect(r, &clip);
@@ -260,8 +328,53 @@ static void draw_card(SDL_Renderer* r, Item* it, int x, int y, bool sel) {
     }
 }
 
+// ---------- capas: baixa so o que aparece, decodifica so o visivel ----------
+static void cover_worker(std::vector<Item*>* items) {
+    while (!g_quit) {
+        if (g_play) { SDL_Delay(300); continue; }  // durante o video, CPU e rede ficam para o player
+        Item* job = nullptr;
+        {
+            std::lock_guard<std::mutex> l(g_mx);
+            for (int i : g_want)
+                if (i >= 0 && i < (int)items->size() && (*items)[i]->st == 0) { job = (*items)[i]; break; }
+        }
+        if (!job) { SDL_Delay(120); continue; }
+        job->st = 1;
+        job->st = http_get_file(job->capa, job->cpath, 4u << 20) ? 2 : 3;  // capa maior que 4 MB e ignorada
+    }
+}
+static SDL_Surface* shrink(SDL_Surface* s, int maxw, int maxh) {
+    if (s->w <= maxw && s->h <= maxh) return s;
+    double k = std::min((double)maxw / s->w, (double)maxh / s->h);
+    int nw = std::max(1, (int)(s->w * k)), nh = std::max(1, (int)(s->h * k));
+    SDL_Surface* d = SDL_CreateRGBSurfaceWithFormat(0, nw, nh, 32, SDL_PIXELFORMAT_RGBA32);
+    if (!d) return s;
+    SDL_BlitScaled(s, nullptr, d, nullptr);
+    SDL_FreeSurface(s);
+    return d;
+}
+// Libera as texturas dos cards fora da tela e cria no maximo 1 por vez. Devolve true se algo mudou.
+static bool manage_tex(SDL_Renderer* r, std::vector<Item*>& items, const std::vector<char>& vis) {
+    for (size_t i = 0; i < items.size(); i++)
+        if (!vis[i] && items[i]->tex) { SDL_DestroyTexture(items[i]->tex); items[i]->tex = nullptr; }
+    for (size_t i = 0; i < items.size(); i++) {
+        Item* it = items[i];
+        if (!vis[i] || it->tex || it->st != 2) continue;
+        SDL_Surface* sf = IMG_Load(it->cpath.c_str());
+        if (!sf) { remove(it->cpath.c_str()); it->st = 3; continue; }
+        sf = shrink(sf, 800, 450);
+        it->tex = SDL_CreateTextureFromSurface(r, sf);
+        SDL_FreeSurface(sf);
+        if (!it->tex) it->st = 3;
+        return true;  // uma capa por quadro
+    }
+    return false;
+}
+
 // ---------- player (mpv) ----------
+struct PlayGuard { PlayGuard() { g_play = true; } ~PlayGuard() { g_play = false; } };
 static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
+    PlayGuard guard;
     std::string playUrl = item->url;
     if (playUrl.find("drive.usercontent.google.com") != std::string::npos) {
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
@@ -285,9 +398,20 @@ static void play(SDL_Renderer* ren, PadState& pad, const Item* item) {
     mpv_set_option_string(mpv, "vo", "libmpv");
     mpv_set_option_string(mpv, "hwdec", "no");
     mpv_set_option_string(mpv, "cache", "yes");
-    mpv_set_option_string(mpv, "demuxer-max-bytes", "50MiB");      // buffer a frente (RAM)
-    mpv_set_option_string(mpv, "demuxer-max-back-bytes", "10MiB"); // buffer para voltar
-    mpv_set_option_string(mpv, "demuxer-readahead-secs", "30");
+    mpv_set_option_string(mpv, "demuxer-max-bytes", "32MiB");      // buffer a frente (RAM)
+    mpv_set_option_string(mpv, "demuxer-max-back-bytes", "4MiB");  // buffer para voltar
+    mpv_set_option_string(mpv, "demuxer-readahead-secs", "20");
+    // menos trabalho para a CPU
+    mpv_set_option_string(mpv, "config", "no");
+    mpv_set_option_string(mpv, "load-scripts", "no");
+    mpv_set_option_string(mpv, "sid", "no");                // sem legendas embutidas (nao renderiza texto)
+    mpv_set_option_string(mpv, "audio-channels", "stereo"); // mixa 5.1 para estereo
+    mpv_set_option_string(mpv, "vd-lavc-threads", "3");     // 3 nucleos livres no Switch
+    mpv_set_option_string(mpv, "vd-lavc-fast", "yes");
+    mpv_set_option_string(mpv, "vd-lavc-skiploopfilter", "nonref");
+    mpv_set_option_string(mpv, "framedrop", "vo");          // descarta quadros em vez de travar
+    mpv_set_option_string(mpv, "sws-fast", "yes");
+    mpv_set_option_string(mpv, "sws-scaler", "fast-bilinear");
     mpv_set_option_string(mpv, "cache-pause-wait", "4");
     mpv_set_option_string(mpv, "network-timeout", "15");
     mpv_set_option_string(mpv, "user-agent", "NetflixPlayerNX/0.1");
@@ -389,9 +513,13 @@ int main() {
     IMG_Init(IMG_INIT_JPG | IMG_INIT_PNG);
     TTF_Init();
     curl_global_init(CURL_GLOBAL_DEFAULT);
+    mkdir("sdmc:/switch/netflix-player", 0777);
+    mkdir("sdmc:/switch/netflix-player/cache", 0777);
 
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
     SDL_Window* win = SDL_CreateWindow("player", 0, 0, 1280, 720, SDL_WINDOW_SHOWN);
     SDL_Renderer* ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    OV = make_overlay(ren);
 
     PlFontData fd;
     plGetSharedFontByType(&fd, PlSharedFontType_Standard);
@@ -402,31 +530,46 @@ int main() {
     std::string err;
     bool ok = load_items(items, err);
 
-    std::atomic<bool> quit{false};
     std::thread th;
-    if (ok) th = std::thread([&] {  // baixa as capas em segundo plano
-        for (auto* it : items) {
-            if (quit) break;
-            if (!it->capa.empty() && http_get(it->capa, it->data)) it->ready = true;
-        }
-    });
+    if (ok) th = std::thread(cover_worker, &items);  // baixa capas em segundo plano, so as necessarias
 
     int row = 0, col = 0, first[2] = {0, 0};
-    bool exitApp = false;
-    while (!exitApp && appletMainLoop()) {
+    bool dirty = true;  // so redesenha quando algo muda (menos CPU/GPU parado no menu)
+    Uint32 lastDraw = 0;
+    while (appletMainLoop()) {
         padUpdate(&pad);
         u64 d = padGetButtonsDown(&pad);
         if (d & HidNpadButton_Plus) break;
+        if (d) dirty = true;
 
-        // cria 1 textura de capa por frame (evita travadas)
-        for (auto* it : items) {
-            if (it->ready && !it->tex && !it->data.empty()) {
-                SDL_Surface* s = IMG_Load_RW(SDL_RWFromConstMem(it->data.data(), (int)it->data.size()), 1);
-                if (s) { it->tex = SDL_CreateTextureFromSurface(ren, s); SDL_FreeSurface(s); }
-                std::vector<uint8_t>().swap(it->data);
-                break;
-            }
+        int n = (int)items.size();
+        if (ok) {
+            int counts[2] = {std::min(5, n), n};
+            if (d & HidNpadButton_Up) row = 0;
+            if (d & HidNpadButton_Down) row = 1;
+            if (d & HidNpadButton_Left) col--;
+            if (d & HidNpadButton_Right) col++;
+            col = std::max(0, std::min(col, counts[row] - 1));
+            if (col < first[row]) first[row] = col;
+            if (col > first[row] + 4) first[row] = col - 4;
+            if (d & HidNpadButton_A) { play(ren, pad, items[col]); dirty = true; }
+
+            // o que esta visivel agora (e um pouco a frente) tem prioridade nas capas
+            std::vector<char> vis(n, 0);
+            std::vector<int> want{col};
+            vis[col] = 1;
+            for (int r = 0; r < 2; r++)
+                for (int i = first[r]; i < std::min(counts[r], first[r] + 5); i++)
+                    if (!vis[i]) { vis[i] = 1; want.push_back(i); }
+            for (int i = first[1] + 5; i < std::min(n, first[1] + 10); i++) want.push_back(i);
+            { std::lock_guard<std::mutex> l(g_mx); g_want = want; }
+            if (manage_tex(ren, items, vis)) dirty = true;
         }
+
+        if (SDL_GetTicks() - lastDraw > 1000) dirty = true;  // refresh de seguranca (ex.: voltou do menu HOME)
+        if (!dirty) { SDL_Delay(30); continue; }
+        dirty = false;
+        lastDraw = SDL_GetTicks();
 
         SDL_SetRenderDrawColor(ren, 20, 20, 20, 255);
         SDL_RenderClear(ren);
@@ -438,17 +581,7 @@ int main() {
             continue;
         }
 
-        int n = (int)items.size();
         int counts[2] = {std::min(5, n), n};
-        if (d & HidNpadButton_Up) row = 0;
-        if (d & HidNpadButton_Down) row = 1;
-        if (d & HidNpadButton_Left) col--;
-        if (d & HidNpadButton_Right) col++;
-        col = std::max(0, std::min(col, counts[row] - 1));
-        if (col < first[row]) first[row] = col;
-        if (col > first[row] + 4) first[row] = col - 4;
-        if (d & HidNpadButton_A) play(ren, pad, items[col]);
-
         draw_hero(ren, items[col]);
         const char* labels[2] = {"Novidades", "Todos os titulos"};
         int ly[2] = {366, 538}, cy[2] = {402, 572};
@@ -460,7 +593,7 @@ int main() {
         SDL_RenderPresent(ren);
     }
 
-    quit = true;
+    g_quit = true;
     if (th.joinable()) th.join();
     curl_global_cleanup();
     TTF_Quit(); IMG_Quit(); SDL_Quit();
