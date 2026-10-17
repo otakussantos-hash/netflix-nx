@@ -21,6 +21,28 @@
     {
       "titulo": "Exorcista",
       "url": "https://drive.google.com/file/d/1z8djiHBDYe8DbopQseXK-Kc9gqh_ht5yMA/view"
+    },
+    {
+      "titulo": "Olha como fica",
+      "temporadas": [
+        {
+          "nome": "Temporada 1",
+          "episodios": [
+            {
+              "titulo": "Aqui está",
+              "url": "https://www.google.com"
+            },
+            {
+              "titulo": "Estamos ainda",
+              "url": "https://www.google.com"
+            },
+            {
+              "titulo": "Cadê você",
+              "url": "https://www.google.com"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
