@@ -41,6 +41,28 @@
               "url": "https://www.google.com"
             }
           ]
+        },
+        {
+          "nome": "Temporada 2",
+          "episodios": [
+            {
+              "titulo": "Opa",
+              "url": "https://www.google.com"
+            },
+            {
+              "titulo": "Nao",
+              "url": "https://www.google.com"
+            }
+          ]
+        },
+        {
+          "nome": "Temporada 3",
+          "episodios": [
+            {
+              "titulo": "Veja bem",
+              "url": "https://www.google.com"
+            }
+          ]
         }
       ]
     }
