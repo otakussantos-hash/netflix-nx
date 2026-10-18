@@ -1,6 +1,15 @@
 {
   "videos": [
     {
+      "titulo": "O Grito 2",
+      "capa": "https://image.tmdb.org/t/p/w500/f5k6okNJeMv78MHjvSwGC170F5z.jpg",
+      "sinopse": "Aubrey vai em busca de sua irmã Karen, que está em um hospital no Japão. Ao chegar lá, é avisada de que Karen está presa a uma maldição, a qual recai sobre ela depois da morte de sua irmã. Livres da casa que os prendia, os espíritos querem vingança.",
+      "ano": "2006",
+      "genero": "Terror, Thriller",
+      "duracao": "1h 38min",
+      "url": "https://drive.google.com/file/d/1dC5IlV_0JZkDmIrlyckYb1P0rxotoU2F/view?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YDc3J0YwZhcHBfaWQPMjc1MjU0NjkyNTk4Mjc5AAEeIY68VfMgSmn3KVMAASDvtNfJNXIQgJ7uMNH6GHs5HQOElMfE-6hdMdl42zs_aem_yGjHkNseUUwMa82NwlP6wQ"
+    },
+    {
       "titulo": "Alien o 8 passageiro",
       "capa": "https://www.europanet.com.br/upload/id_produto/107___/107651g.jpg",
       "sinopse": "Alien, o Oitavo Passageiro[2][3][4] ou Alien, o 8.º Passageiro[5][6][7]) é um filme britanico-estadunidense[8] de 1979 dirigido por Ridley Scott e protagonizado por Tom Skerritt, Sigourney Weaver, Veronica Cartwright, Harry Dean Stanton, John Hurt, Ian Holm e Yaphet Kotto. É o primeiro filme da franquia Alien. O título do filme refere-se ao antagonista primário: uma criatura alienígena altamente agressiva que persegue e mata a tripulação de uma nave espacial. Ne",
