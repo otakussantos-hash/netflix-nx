@@ -9,7 +9,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE   := Netflix Player
 APP_AUTHOR  := Voce
-APP_VERSION := 0.1.0
+APP_VERSION := 0.3.0
 
 TARGET   := netflix-player
 BUILD    := build
@@ -38,6 +38,10 @@ ifneq ($(wildcard $(ICON)),)
 export NROFLAGS += --icon=$(ICON)
 endif
 export NROFLAGS += --nacp=$(CURDIR)/$(TARGET).nacp
+# romfs/ (intro.mp4 + logo.png) vai dentro do .nro
+ifneq ($(wildcard $(CURDIR)/romfs),)
+export NROFLAGS += --romfsdir=$(CURDIR)/romfs
+endif
 export TOPDIR := $(CURDIR)
 export VPATH  := $(foreach dir,$(SOURCES),$(CURDIR)/$(dir))
 export DEPSDIR := $(CURDIR)/$(BUILD)

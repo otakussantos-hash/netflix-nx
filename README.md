@@ -33,6 +33,14 @@ Na série: **↑/↓** episódio, **←/→** temporada, **A** assiste, **B** vo
 - O Drive tem cota de acessos: se um arquivo muito acessado der erro, tire uma cópia para o seu Drive e use a cópia.
 - Pastas inteiras não são suportadas: um link por arquivo.
 
+## Abertura, retomar e "Volte a assistir" (v0.3)
+- **Abertura:** ao abrir o app toca o vídeo da Netflix (`romfs/intro.mp4`, dentro do próprio `.nro`). Enquanto ele roda, o JSON e as primeiras capas já carregam por trás; depois os ícones aparecem com animação suave. **A/B** pula a abertura. Para usar outro vídeo, coloque `sdmc:/switch/netflix-player/intro.mp4` no SD (ele vence o embutido).
+- **Loading:** só o círculo vermelho girando, sem textos.
+- **Retomar:** ao sair de um filme/episódio (B, ou fechando o app) o ponto fica salvo em `sdmc:/switch/netflix-player/progress.json` (também a cada 30 s). Ao abrir de novo ele volta de onde parou (3 s antes) e mostra "Continuando de ...". Terminou o filme = próxima vez começa do início.
+- **Volte a assistir:** fileira no topo com os **últimos 5 títulos** vistos, com barra vermelha de progresso. Em série, abre já no último episódio visto. O botão vira **A Continuar** quando há ponto salvo.
+- **Títulos:** nunca mais cortam letra no meio: se não couberem, viram "..." (no banner e na tela de detalhes quebram em até 2 linhas).
+- **Logo:** o "N" no canto vem de `romfs/logo.png` (recortado do vídeo de abertura). Para trocar, substitua o arquivo ou coloque `logo.png` em `sdmc:/switch/netflix-player/`.
+
 ## Controles
 - Menu: D-pad navega, **A** assiste, **+** sai
 - Player: **A** pausa, **←/→** ±10 s, **ZL/ZR** ±1 min, **B** volta
