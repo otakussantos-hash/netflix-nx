@@ -1,7 +1,12 @@
 {
   "videos": [
     {
-      "titulo": "A profecia",
+      "titulo": "A Profecia",
+      "capa": "https://image.tmdb.org/t/p/w500/uHemQhtg5n5jPYMLeFFTPfMsvFE.jpg",
+      "sinopse": "O embaixador americano e a esposa querem muito ter filhos. Quando ela dá à luz um bebê morto e um padre sugere que adotem um recém-nascido saudável e órfão, ele aceita sem contar à mulher. O que ele não sabe é que o bebê é o anticristo.",
+      "ano": "1976",
+      "genero": "Terror, Thriller",
+      "duracao": "1h 51min",
       "url": "https://drive.google.com/file/d/1ZVcTjqdMWh2zLUOmivuWmTauKU9s-fD3/view?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YDc3J0YwZhcHBfaWQPMjc1MjU0NjkyNTk4Mjc5AAEePT3BXtEEf9k45oZLe8W_dA9QrzekuR6q7tl0rWpQ3rvvmBirdtTzn8EmvT4_aem_yGjHkNseUUwMa82NwlP6wQ"
     },
     {
