@@ -1,8 +1,17 @@
 {
   "videos": [
     {
+      "titulo": "Kill Bill: Volume 1",
+      "capa": "https://image.tmdb.org/t/p/w780/2tR3dwfcJPEgvDWVV5zMKT05fPa.jpg",
+      "sinopse": "A ex-assassina conhecida apenas como \"A Noiva\" acorda de um coma de quatro anos decidida a se vingar de Bill, seu ex-amante e chefe, que tentou matá-la no dia do casamento. Ela está motivada a acertar as contas com cada uma das pessoas envolvidas com a perda da filha, da festa de casamento e dos quatro anos da sua vida. Na jornada, \"A Noiva\" é submetida a dores físicas agoniantes ao enfrentar a inescrupulosa gangue de Bill, o Esquadrão Assassino de Víboras Mortais.",
+      "ano": "2003",
+      "genero": "Ação, Crime",
+      "duracao": "1h 51min",
+      "url": "https://drive.google.com/file/d/1qNuJqd3StFXmRA7IF6mRz2DmoEacXfqd/view?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEecuYlW7WjSF7tyKZ9e-gq4ij8fbgN4eCn7vBTixj1DYvwCVLMCaM_cbK9XYM_aem_OmHFXQLpECBRHP0e0qrltQ"
+    },
+    {
       "titulo": "Quarteto Fantástico: Primeiros Passos",
-      "capa": "https://image.tmdb.org/t/p/w780/9qMmvOE0q1Kf3aQnS5FDoj6kTeb.jpg",
+      "capa": "https://image.tmdb.org/t/p/w500/8F2vIxWycANHW763lnx2hJVtjDC.jpg",
       "sinopse": "No vibrante cenário de um mundo retrofuturista inspirado nos anos 1960, a Primeira Família da Marvel é forçada a equilibrar seus papéis como heróis com a força de seus laços familiares, enquanto defendem a Terra de um deus espacial voraz chamado Galactus e sua enigmática arauta, a Surfista Prateada.",
       "ano": "2025",
       "genero": "Ficção científica, Aventura, Ação",
@@ -11,7 +20,7 @@
     },
     {
       "titulo": "A Profecia",
-      "capa": "https://image.tmdb.org/t/p/w780/a2GIPqN1agQeJNuGHIJKPLknv0J.jpg",
+      "capa": "https://image.tmdb.org/t/p/w500/uHemQhtg5n5jPYMLeFFTPfMsvFE.jpg",
       "sinopse": "O embaixador americano e a esposa querem muito ter filhos. Quando ela dá à luz um bebê morto e um padre sugere que adotem um recém-nascido saudável e órfão, ele aceita sem contar à mulher. O que ele não sabe é que o bebê é o anticristo.",
       "ano": "1976",
       "genero": "Terror, Thriller",
@@ -20,7 +29,7 @@
     },
     {
       "titulo": "O Grito 2",
-      "capa": "https://image.tmdb.org/t/p/w780/hyY8qvjZ82r5pBISUcQIaFSKv22.jpg",
+      "capa": "https://image.tmdb.org/t/p/w500/f5k6okNJeMv78MHjvSwGC170F5z.jpg",
       "sinopse": "Aubrey vai em busca de sua irmã Karen, que está em um hospital no Japão. Ao chegar lá, é avisada de que Karen está presa a uma maldição, a qual recai sobre ela depois da morte de sua irmã. Livres da casa que os prendia, os espíritos querem vingança.",
       "ano": "2006",
       "genero": "Terror, Thriller",
@@ -29,7 +38,7 @@
     },
     {
       "titulo": "Alien: O Oitavo Passageiro",
-      "capa": "https://image.tmdb.org/t/p/w780/dcjZFeAPcsT6NcrcqzB6nkSIjyC.jpg",
+      "capa": "https://image.tmdb.org/t/p/w500/rJEU0u6hvtqBy344z0bpI194LeQ.jpg",
       "sinopse": "Quando a tripulação da sonda espacial Nostromo responde a um pedido de socorro vindo de um planeta inóspito, eles descobrem uma forma de vida mortal que se reproduz dentro de humanos. Agora, a tripulação deve lutar para permanecer viva e impedir que a criatura chegue até a Terra.",
       "ano": "1979",
       "genero": "Terror, Ficção científica",
@@ -38,7 +47,7 @@
     },
     {
       "titulo": "A Incrível História de Adaline",
-      "capa": "https://image.tmdb.org/t/p/w780/1iR1Fa3pcn5wYAtS4vuW2Zg8LOA.jpg",
+      "capa": "https://image.tmdb.org/t/p/w500/gU84OUm9c4R44Zx8U1YPbCzKqIo.jpg",
       "sinopse": "Adaline Bowman nasceu na virada do século XX e levava uma vida normal até sofrer um grave acidente de carro. Desde então, ela milagrosamente parou de envelhecer e acabou se tornando um ser imortal com eterna aparência de 29 anos. Adaline vive uma existência solitária, nunca se permitindo criar laços com ninguém para não ter seu segredo revelado. Mas tudo muda quando ela conhece o jovem e belo Ellis Jones, um filantropo por quem pode valer a pena arriscar sua imortalidade.",
       "ano": "2015",
       "genero": "Romance, Fantasia, Drama",
