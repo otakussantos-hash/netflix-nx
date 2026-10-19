@@ -1,6 +1,24 @@
 {
   "videos": [
     {
+      "titulo": "IT: Bem-Vindos a Derry",
+      "capa": "https://image.tmdb.org/t/p/w780/5rX5EAnovQ80ZCGHwZygVRoxdnW.jpg",
+      "sinopse": "Durante as férias de 1962, em uma pacata cidadezinha chamada Derry, um grupo de sete amigos começa a ver coisas bizarras. Um conta que viu um palhaço, outro que viu uma múmia. Finalmente, acabam descobrindo que estavam todos vendo a mesma coisa: um ser sobrenatural e maligno que pode assumir várias formas. Ele mesmo. O Pennywise.",
+      "ano": "2025",
+      "genero": "Drama, Mistério",
+      "temporadas": [
+        {
+          "nome": "Temporada 1",
+          "episodios": [
+            {
+              "titulo": "Episódio 1",
+              "url": "https://drive.google.com/file/d/1v4idT5q0y-TbdwBy1jpqLEa_Gq57OHT7/edit?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEeEW0ROB5k8OqN_dCis6OOjK3Xui1aHklwNJuvC_EvL4-e6MTpUJXnzvd-2JE_aem_OmHFXQLpECBRHP0e0qrltQ"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "titulo": "O Silêncio dos Inocentes",
       "capa": "https://image.tmdb.org/t/p/w780/cNkOibSGJOUa353zYL9tUOh6W3o.jpg",
       "sinopse": "Clarice Starling é uma das melhores estudantes da academia de treinamento do FBI. Jack Crawford quer que Clarice entreviste o Dr. Hannibal Lecter, um psiquiatra brilhante e também um psicopata violento, que cumpre prisão perpétua por vários atos de assassinato e canibalismo. Crawford acredita que Lecter pode ter uma visão em um caso e que Starling, como uma mulher jovem e atraente, pode ser a isca para atraí-lo.",
