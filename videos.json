@@ -1,6 +1,24 @@
 {
   "videos": [
     {
+      "titulo": "Um Contratempo",
+      "capa": "https://image.tmdb.org/t/p/w780/AqyboQPXJDZtxucSwQDvRjO83RJ.jpg",
+      "sinopse": "Após acordar ao lado de sua amante assassinada em um quarto de hotel, um empresário contrata uma advogada para descobrir como ele acabou sendo suspeito de um homicídio.",
+      "ano": "2017",
+      "genero": "Drama, Mistério, Thriller",
+      "duracao": "1h 47min",
+      "url": "https://drive.google.com/file/d/0B5AXDsVHX4_-bWhvYldtWUg5dGs/view?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEenKvcTHUchSiZ9FdcjbsQMvRUzlwFiStAP04mjDZrKWKsANBrioMJcYMmV2U_aem_OmHFXQLpECBRHP0e0qrltQ&resourcekey=0-DyPQoOYETzhnDUMbeSDx_g"
+    },
+    {
+      "titulo": "Um Dia de Fúria",
+      "capa": "https://image.tmdb.org/t/p/w780/3PTv20Y6sukGChZkqwN6PbY35uG.jpg",
+      "sinopse": "Prendergast, um policial em seu último dia de trabalho pois vai se aposentar, arrisca sua vida para tentar deter William Foster, um homem emocionalmente perturbado que perdeu seu emprego e vai ao encontro de Beth, sua ex-mulher, e da filha, sem requer reconhecer que o seu casamento já acabou há muito tempo. Em seu caminho, William vai eliminando quem cruza seu destino.",
+      "ano": "1993",
+      "genero": "Crime, Drama, Thriller",
+      "duracao": "1h 53min",
+      "url": "https://drive.google.com/file/d/12n_1PX6aQ5ylgpFSH6V_oM30jgfUeu9C/view?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEe-Y5P-2g0ZynpC4r2nDhUp9QebUfNTeHyvhgEvRuQ9C4oKA59LLmv-kQQtMQ_aem_OmHFXQLpECBRHP0e0qrltQ"
+    },
+    {
       "titulo": "IT: Bem-Vindos a Derry",
       "capa": "https://image.tmdb.org/t/p/w780/5rX5EAnovQ80ZCGHwZygVRoxdnW.jpg",
       "sinopse": "Durante as férias de 1962, em uma pacata cidadezinha chamada Derry, um grupo de sete amigos começa a ver coisas bizarras. Um conta que viu um palhaço, outro que viu uma múmia. Finalmente, acabam descobrindo que estavam todos vendo a mesma coisa: um ser sobrenatural e maligno que pode assumir várias formas. Ele mesmo. O Pennywise.",
@@ -13,6 +31,14 @@
             {
               "titulo": "Episódio 1",
               "url": "https://drive.google.com/file/d/1v4idT5q0y-TbdwBy1jpqLEa_Gq57OHT7/edit?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEeEW0ROB5k8OqN_dCis6OOjK3Xui1aHklwNJuvC_EvL4-e6MTpUJXnzvd-2JE_aem_OmHFXQLpECBRHP0e0qrltQ"
+            },
+            {
+              "titulo": "Episódio 2",
+              "url": "https://drive.google.com/file/d/1D7EfgCVNemLeNsVzYgwJsJq3EG2wFNWi/edit?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEe5_P7h4_tNLHdIqrD2NOZXPah7KtIPWmr5wBJUuLc9IDsFPcZwXkyEw6bryo_aem_OmHFXQLpECBRHP0e0qrltQ"
+            },
+            {
+              "titulo": "Episódio 3",
+              "url": "https://drive.google.com/file/d/1iV7P-DowvK80uCunmI-NVtRGxIZvhwbZ/edit?fbclid=IwZXh0bgNhZW0DMTAwAHBkb2YBc3J0YwZhcHBfaWQMMzUwNjg1NTMxNzI4AAEeQ2EmTK5lfIxfUha-4j1QsAXLMLqsw_HdoiTnrDs1R8YBNSlNcwY2y0uH3so_aem_OmHFXQLpECBRHP0e0qrltQ"
             }
           ]
         }
