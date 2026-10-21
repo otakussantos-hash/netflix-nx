@@ -32,8 +32,9 @@ button:focus-visible,input:focus-visible{outline:2px solid #e50914;outline-offse
 <div id="stage"><canvas id="cv" width="1280" height="720"></canvas></div>
 <div class="pad" aria-label="Controle">
   <div class="grp">
-    <button data-b="zl">ZL</button><button data-b="up">&uarr;</button><button data-b="zr">ZR</button>
+    <button data-b="l">L</button><button data-b="up">&uarr;</button><button data-b="r">R</button>
     <button data-b="left">&larr;</button><button data-b="plus">+</button><button data-b="right">&rarr;</button>
+    <button data-b="zl">ZL</button><span></span><button data-b="zr">ZR</button>
     <span></span><button data-b="down">&darr;</button><span></span>
   </div>
   <div class="grp">
@@ -42,7 +43,7 @@ button:focus-visible,input:focus-visible{outline:2px solid #e50914;outline-offse
     <span></span><button data-b="b">B</button><span></span>
   </div>
 </div>
-<p class="hint">Teclado: setas = direcional, Enter ou Z = A, Esc ou X = B, Q = ZL, E = ZR, P = +. Controle USB/Bluetooth também funciona.</p>
+<p class="hint">Teclado: setas = direcional, [ ou PageUp = L, ] ou PageDown = R, Enter ou Z = A, Esc ou X = B, Q = ZL, E = ZR, P = +. Controle USB/Bluetooth também funciona.</p>
 
 <script>
 const JSON_URL = "https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json";
@@ -50,7 +51,7 @@ const W = 1280, H = 720;
 const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
 const $ = id => document.getElementById(id);
 const FONT = '"Nintendo Switch","Segoe UI","Noto Sans",Roboto,Arial,sans-serif';
-const FS = [18, 26, 56];
+const FS = [18, 26, 56, 40];
 const WHITE = [255,255,255,255], GRAY = [170,170,170,255], RED = [229,9,20,255], BLACK = [0,0,0,255];
 
 // ---------- desenho (mesmas funcoes do main.cpp) ----------
@@ -58,7 +59,7 @@ function rect(x, y, w, h, r, g, b, a) { ctx.fillStyle = `rgba(${r},${g},${b},${a
 function clear(r, g, b) { rect(0, 0, W, H, r, g, b, 255); }
 function txt(f, s, x, y, c = WHITE) {
   if (!s) return;
-  ctx.font = FS[f] + "px " + FONT; ctx.textBaseline = "etop";
+  ctx.font = FS[f] + "px " + FONT; ctx.textBaseline = "top";
   ctx.fillStyle = `rgba(${c[0]},${c[1]},${c[2]},${c[3]/255})`; ctx.fillText(s, x, y);
 }
 function clip(x, y, w, h) { ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip(); }
@@ -84,13 +85,14 @@ function fixVideo(u) { const id = driveId(u); return id ? `https://drive.usercon
 function fixCover(u) { const id = driveId(u); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w640` : u; }
 
 // ---------- estado ----------
-let items = [], ok = false, err = "", row = 0, col = 0, first = [0, 0];
+let items = [], ok = false, err = "", row = 0, col = 0, first = [0, 0], rows = [], pf = [0, 0], pdir = [1, 1], ptime = [0, 0];
+const logo = new Image(); logo.src = "romfs/logo.png";
 let mode = "boot", token = 0, localJson = null, errUntil = 0;
 let down = {};
 
 async function load() {
   const tk = ++token;
-  mode = "boot"; items = []; ok = false; err = ""; row = col = 0; first = [0, 0];
+  mode = "boot"; items = []; ok = false; err = ""; row = col = 0; first = [0, 0]; pf = [0, 0]; ptime = [0, 0]; rows = [];
   const url = $("url").value.trim() || JSON_URL;
   let text = null;
   try {
@@ -120,6 +122,7 @@ async function load() {
     }
   } catch (e) { items = []; err = "JSON invalido"; mode = "menu"; return; }
   if (!items.length) { err = "Nenhum video no JSON"; mode = "menu"; return; }
+  rows = [{ label: "Novidades", idx: items.slice(0, 8).map((_, i) => i) }, { label: "Todos os títulos", idx: items.map((_, i) => i) }];
   ok = true; mode = "menu";
   loadCovers(tk);
 }
@@ -131,33 +134,95 @@ async function loadCovers(tk) {  // baixa as capas em sequencia, em segundo plan
   }
 }
 
-// ---------- telas ----------
+// ---------- telas (layout igual ao do app: 4 cards por fileira, L/R troca de pagina) ----------
+const PG = 4, X0 = 48, CW = 272, CH = 153, GAP = 32, HERO_H = 270, LY = [272, 478], CY = [314, 520];
+const maxFirst = n => Math.max(0, n - PG), nPages = n => Math.max(1, Math.ceil(n / PG));
+const curPage = (f, n) => (n > PG && f >= maxFirst(n)) ? nPages(n) - 1 : Math.floor(f / PG);
+const pageNext = (f, n) => Math.min((Math.floor(f / PG) + 1) * PG, maxFirst(n));
+const pagePrev = f => f <= 0 ? 0 : Math.floor((f - 1) / PG) * PG;
+function scrollTo(f, c, n) {
+  f = Math.max(0, Math.min(f, maxFirst(n)));
+  if (c > f + PG - 1) f = Math.min(Math.floor(c / PG) * PG, maxFirst(n));
+  else if (c < f) f = Math.floor(c / PG) * PG;
+  return f;
+}
+const ez = x => { x = Math.max(0, Math.min(1, x)); return 1 - (1 - x) ** 3; };
+function tw(f, s) { ctx.font = FS[f] + "px " + FONT; return ctx.measureText(s).width; }
+function fit(f, s, maxw) {
+  if (tw(f, s) <= maxw) return s;
+  let t = s;
+  while (t.length && tw(f, t.trimEnd() + "...") > maxw) t = t.slice(0, -1);
+  return t.trimEnd() + "...";
+}
+function wrapPx(f, s, maxw, maxl) {
+  const out = []; let line = "";
+  for (const w of s.split(/\s+/).filter(Boolean)) {
+    const c = line ? line + " " + w : w;
+    if (!line || tw(f, c) <= maxw) line = c; else { out.push(line); line = w; }
+  }
+  if (line) out.push(line);
+  if (out.length > maxl) { const rest = out.slice(maxl - 1).join(" "); out.length = maxl; out[maxl - 1] = rest; }
+  return out.map(l => fit(f, l, maxw));
+}
+function drawCover(img, x, y, w, h, fy = 0.5) {  // preenche sem distorcer (corta o excesso)
+  const iw = img.naturalWidth, ih = img.naturalHeight;
+  let sx = 0, sy = 0, sw = iw, sh = ih;
+  if (iw * h > ih * w) { sw = ih * w / h; sx = (iw - sw) / 2; } else { sh = iw * h / w; sy = (ih - sh) * fy; }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+function fillCircle(cx, cy, r, c) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); }
+function chevron(cx, cy, s, dir) {
+  ctx.strokeStyle = "rgba(255,255,255,.82)"; ctx.lineWidth = 3; ctx.beginPath();
+  ctx.moveTo(cx - dir * s / 2, cy - s); ctx.lineTo(cx + dir * s / 2, cy); ctx.lineTo(cx - dir * s / 2, cy + s); ctx.stroke();
+}
+function drawPager(y, pages, cur, active) {
+  if (pages < 2) return;
+  const key = (x, s, on) => {
+    const c = active && on ? 96 : 50; rect(x, y + 6, 30, 24, c, c, c, 255);
+    txt(0, s, x + (30 - tw(0, s)) / 2, y + 7, active && on ? WHITE : GRAY);
+  };
+  const num = (cur + 1) + " / " + pages, midw = pages <= 10 ? pages * 18 : tw(0, num);
+  let x = X0 + 4 * CW + 3 * GAP - 30;
+  key(x, "R", cur < pages - 1);
+  x -= 12 + midw;
+  if (pages <= 10) for (let i = 0; i < pages; i++)
+    i === cur ? fillCircle(x + 9 + i * 18, y + 18, 5, active ? "#fff" : "#969696") : fillCircle(x + 9 + i * 18, y + 18, 4, "#505050");
+  else txt(0, num, x, y + 7, GRAY);
+  key(x - 42, "L", cur > 0);
+}
 function drawHero(it) {
-  if (it.img) ctx.drawImage(it.img, 480, 0, 800, 360);
-  rect(0, 0, 480, 360, 20, 20, 20, 255);
-  for (let i = 0; i < 48; i++) rect(480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - Math.floor(i * 255 / 47));
-  for (let i = 0; i < 60; i++) rect(0, 300 + i, 1280, 1, 20, 20, 20, Math.floor(i * 255 / 59));
-  txt(1, it.seasons.length ? "SERIE" : "FILME", 48, 40, RED);
-  clip(48, 110, 700, 80); txt(2, it.titulo, 48, 110); unclip();
-  rect(48, 230, 190, 52, 255, 255, 255, 255);
-  txt(1, "A  Assistir", 68, 240, BLACK);
+  if (it.img) drawCover(it.img, 480, 0, 800, HERO_H, 0.25);
+  let g = ctx.createLinearGradient(480, 0, 960, 0);
+  g.addColorStop(0, "#141414"); g.addColorStop(1, "rgba(20,20,20,0)");
+  rect(0, 0, 480, HERO_H, 20, 20, 20, 255); ctx.fillStyle = g; ctx.fillRect(480, 0, 480, HERO_H);
+  g = ctx.createLinearGradient(0, HERO_H - 45, 0, HERO_H);
+  g.addColorStop(0, "rgba(20,20,20,0)"); g.addColorStop(1, "#141414"); ctx.fillStyle = g; ctx.fillRect(0, HERO_H - 45, W, 45);
+  if (logo.complete && logo.naturalWidth) ctx.drawImage(logo, X0, 14, logo.naturalWidth * 32 / logo.naturalHeight, 32);
+  else txt(1, "NETFLIX", X0, 14, RED);
+  if (tw(2, it.titulo) <= 640) txt(2, it.titulo, X0, 50);
+  else wrapPx(3, it.titulo, 640, 2).forEach((l, i) => txt(3, l, X0, 46 + i * 42));
+  let meta = [it.ano, it.genero, it.duracao].filter(Boolean).join("  |  ");
+  if (it.seasons.length) meta += (meta ? "  |  " : "") + it.seasons.length + (it.seasons.length === 1 ? " temporada" : " temporadas");
+  txt(0, fit(0, meta, 640), X0, 136, GRAY);
+  wrapPx(0, it.sinopse, 600, 2).forEach((l, i) => txt(0, l, X0, 162 + i * 22, [200, 200, 200, 255]));
+  rect(X0, 216, 200, 36, 255, 255, 255, 255);
+  ctx.fillStyle = "#000"; ctx.beginPath(); ctx.moveTo(X0 + 16, 226); ctx.lineTo(X0 + 28, 234); ctx.lineTo(X0 + 16, 242); ctx.fill();
+  txt(1, "Assistir", X0 + 44, 218, BLACK);
 }
 function drawCard(it, x, y, sel) {
-  let w = 220, h = 124;
+  let w = CW, h = CH;
   if (sel) { x -= 8; y -= 8; w += 16; h += 16; }
-  rect(x, y, w, h, 50, 50, 50, 255);
-  if (it.img) ctx.drawImage(it.img, x, y, w, h);
-  clip(x, y, w, h);
-  rect(x, y + h - 30, w, 30, 0, 0, 0, 170);
-  txt(0, it.titulo, x + 8, y + h - 27);
-  unclip();
+  rect(x, y, w, h, 38, 38, 38, 255);
+  if (it.img) drawCover(it.img, x, y, w, h);
+  else if (!it.capa) wrapPx(0, it.titulo, w - 28, 3).forEach((l, i, a) => txt(0, l, x + 14, y + (h - a.length * 24) / 2 + i * 24));
+  if (!sel) rect(x, y, w, h, 0, 0, 0, 80);
   if (sel) for (let i = 0; i < 3; i++) {
     const bx = x - i, by = y - i, bw = w + 2 * i, bh = h + 2 * i;
     rect(bx, by, bw, 1, 255, 255, 255, 255); rect(bx, by + bh - 1, bw, 1, 255, 255, 255, 255);
     rect(bx, by, 1, bh, 255, 255, 255, 255); rect(bx + bw - 1, by, 1, bh, 255, 255, 255, 255);
   }
 }
-function menu(d) {
+function menu(d, now) {
   clear(20, 20, 20);
   if (!ok) {
     txt(1, err, 48, 320);
@@ -166,22 +231,36 @@ function menu(d) {
     return;
   }
   if (d.plus) { mode = "exited"; return; }
-  const n = items.length, counts = [Math.min(5, n), n];
+  const prow = row; let slot = col - first[row];
   if (d.up) row = 0;
   if (d.down) row = 1;
+  if (row !== prow) col = first[row] + Math.max(0, Math.min(slot, PG - 1));
+  const N = rows[row].idx.length;
   if (d.left) col--;
   if (d.right) col++;
-  col = Math.max(0, Math.min(col, counts[row] - 1));
-  if (col < first[row]) first[row] = col;
-  if (col > first[row] + 4) first[row] = col - 4;
-  if (d.a) { startDetail(items[col]); return; }
-  drawHero(items[col]);
-  const labels = ["Novidades", "Todos os titulos"], ly = [366, 538], cy = [402, 572];
+  col = Math.max(0, Math.min(col, N - 1));
+  first[row] = scrollTo(first[row], col, N);
+  slot = col - first[row];
+  if (d.r || d.zr) { const nf = pageNext(first[row], N); if (nf !== first[row]) { first[row] = nf; col = Math.min(N - 1, nf + slot); } }
+  if (d.l || d.zl) { const nf = pagePrev(first[row]); if (nf !== first[row]) { first[row] = nf; col = nf + slot; } }
+  for (let r = 0; r < 2; r++) if (first[r] !== pf[r]) { pdir[r] = first[r] > pf[r] ? 1 : -1; ptime[r] = now; pf[r] = first[r]; }
+  if (d.a) { startDetail(items[rows[row].idx[col]]); return; }
+  drawHero(items[rows[row].idx[col]]);
   for (let r = 0; r < 2; r++) {
-    txt(1, labels[r], 48, ly[r]);
-    for (let i = first[r]; i < Math.min(counts[r], first[r] + 5); i++)
-      drawCard(items[i], 48 + (i - first[r]) * 232, cy[r], r === row && i === col);
+    const R = rows[r], n = R.idx.length, pages = nPages(n), cp = curPage(first[r], n);
+    txt(1, R.label, X0, LY[r]);
+    drawPager(LY[r], pages, cp, r === row);
+    const pa = ez((now - ptime[r]) / 280), off = (1 - pa) * 80 * pdir[r];
+    ctx.globalAlpha = 0.2 + 0.8 * pa;
+    for (let i = first[r], k = 0; i < Math.min(n, first[r] + PG); i++, k++)
+      drawCard(items[R.idx[i]], X0 + k * (CW + GAP) + off, CY[r], r === row && i === col);
+    ctx.globalAlpha = 1;
+    if (r === row) {
+      if (cp > 0) chevron(24, CY[r] + CH / 2, 14, -1);
+      if (cp < pages - 1) chevron(1256, CY[r] + CH / 2, 14, 1);
+    }
   }
+  txt(0, "Direcional mover   |   L / R mudar de página   |   A abrir   |   + sair", X0, 696, GRAY);
 }
 
 // ---------- detalhes ----------
@@ -222,7 +301,7 @@ function detail(d) {
     if (d.a && ne > 0) { playEp(); return; }
   }
   clear(20, 20, 20);
-  if (it.img) ctx.drawImage(it.img, 480, 0, 800, 360);
+  if (it.img) drawCover(it.img, 480, 0, 800, 360, 0.25);
   rect(0, 0, 480, 360, 20, 20, 20, 255);
   for (let i = 0; i < 48; i++) rect(480 + i * 10, 0, 10, 360, 20, 20, 20, 255 - Math.floor(i * 255 / 47));
   for (let i = 0; i < 60; i++) rect(0, 300 + i, 1280, 1, 20, 20, 20, Math.floor(i * 255 / 59));
@@ -303,7 +382,7 @@ const prevPad = {};
 function pollPad(d) {
   const g = (navigator.getGamepads ? navigator.getGamepads() : []).find(p => p);
   if (!g) return;
-  const map = { a: 1, b: 0, zl: 6, zr: 7, plus: 9, up: 12, down: 13, left: 14, right: 15 };
+  const map = { a: 1, b: 0, l: 4, r: 5, zl: 6, zr: 7, plus: 9, up: 12, down: 13, left: 14, right: 15 };
   for (const k in map) {
     const on = !!(g.buttons[map[k]] && g.buttons[map[k]].pressed);
     if (on && !prevPad[k]) d[k] = true;
@@ -315,7 +394,7 @@ function frame(now) {
   pollPad(d);
   if (mode === "boot") clear(0, 0, 0);
   else if (mode === "exited") { clear(0, 0, 0); txt(0, "App encerrado (+). Aperte A para abrir de novo.", 48, 680, GRAY); if (d.a) load(); }
-  else if (mode === "menu") menu(d);
+  else if (mode === "menu") menu(d, now);
   else if (mode === "detail") detail(d);
   else if (mode === "play") player(d, now);
   else if (mode === "err") {
@@ -326,7 +405,7 @@ function frame(now) {
 }
 
 // ---------- entrada ----------
-const KEYS = { arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", enter: "a", z: "a", escape: "b", backspace: "b", x: "b", q: "zl", e: "zr", p: "plus" };
+const KEYS = { "[": "l", "]": "r", pageup: "l", pagedown: "r", arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", enter: "a", z: "a", escape: "b", backspace: "b", x: "b", q: "zl", e: "zr", p: "plus" };
 addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.repeat) return;
   const k = KEYS[e.key.toLowerCase()];

@@ -9,7 +9,7 @@ include $(DEVKITPRO)/libnx/switch_rules
 
 APP_TITLE   := Netflix Player
 APP_AUTHOR  := Voce
-APP_VERSION := 0.3.0
+APP_VERSION := 0.4.0
 
 TARGET   := netflix-player
 BUILD    := build

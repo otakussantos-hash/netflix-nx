@@ -63,3 +63,10 @@ O `.nro` agora leva `icon.jpg` (256x256) e o NACP embutidos. Troque o `icon.jpg`
 ## Observações
 - Decodificação é por software (`hwdec=no`): prefira H.264 até 720p.
 - Se o job falhar no passo de dependências, confira o nome do pacote da libmpv no devkitPro (`dkp-pacman -Ss mpv`).
+
+## Tela inicial (v0.4)
+- **4 cards grandes por fileira**, capas sem distorção e destaque (banner) com título, sinopse e botão.
+- **L / R** (ou ZL / ZR) trocam de **página** da fileira em foco (4 títulos por vez); o indicador `[L] ● ○ ○ [R]` mostra onde você está e setas nas bordas avisam que tem mais.
+- O direcional continua andando de um em um (vira a página sozinho ao passar da borda). Cima/Baixo muda de fileira mantendo a mesma coluna.
+- "Novidades" agora mostra os 8 primeiros títulos do JSON (2 páginas).
+- `netflix-nx-simulador.html` mostra o mesmo layout (teclas `[` e `]` = L e R) e teve o bug do texto cortado corrigido.
