@@ -1,6 +1,10 @@
 {
   "videos": [
     {
+      "titulo": "rec",
+      "url": "https://drive.google.com/file/d/12xWmhInLQVspA2bNF_HoExTuhFh1y-6r/view?usp=drive_link"
+    },
+    {
       "titulo": "Terror em Amityville",
       "capa": "https://image.tmdb.org/t/p/w780/7wGJ2xjHqwXkeQPe7cOXOGE8tFq.jpg",
       "sinopse": "Após se mudarem para uma casa onde aconteceram terríveis assassinatos de uma mesma família, George, Kathy e seus filhos passam a viver uma forte experiência sobrenatural. As forças diabólicas que ali habitam perturbam toda a família durante 28 dias. No 28° dia, eles decidem tomar uma atitude.",
