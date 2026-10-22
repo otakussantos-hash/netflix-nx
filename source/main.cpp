@@ -373,7 +373,8 @@ static std::vector<int> recent_idx(const std::vector<Item*>& items) {
 // ---------- layout da tela inicial: 4 cards grandes por fileira, L/R troca de pagina ----------
 static const int PG = 4;                                  // cards visiveis por fileira
 static const int X0 = 48, CW = 272, CH = 153, GAP = 32;   // 4 * 272 + 3 * 32 = 1184 (margem de 48 dos dois lados)
-static const int HERO_H = 270;                            // altura do destaque
+static const int HERO_H = 270;
+static const int MAXR = 16;                               // maximo de fileiras por aba                            // altura do destaque
 static const int LY[2] = {272, 478}, CY[2] = {314, 520};  // rotulo e cards das 2 fileiras visiveis
 static int max_first(int n) { return std::max(0, n - PG); }
 static int n_pages(int n) { return std::max(1, (n + PG - 1) / PG); }
@@ -388,16 +389,114 @@ static int scroll_to(int first, int col, int n) {
     return first;
 }
 
-struct Row { const char* label; std::vector<int> idx; bool cont; };
-static std::vector<Row> build_rows(const std::vector<Item*>& items) {
+struct Row { std::string label; std::vector<int> idx; bool cont; };
+// ---------- minha lista (favoritos, botao X) ----------
+#define FAV_FILE BASE "lista.json"
+static std::vector<std::string> g_fav;
+static void fav_load() {
+    g_fav.clear();
+    std::ifstream f(FAV_FILE, std::ios::binary);
+    if (!f) return;
+    try { for (auto& e : nlohmann::json::parse(f).at("l")) g_fav.push_back(e.get<std::string>()); } catch (...) {}
+}
+static void fav_save() {
+    nlohmann::json j;
+    j["l"] = g_fav;
+    std::string tmp = FAV_FILE ".tmp";
+    {
+        std::ofstream o(tmp, std::ios::binary | std::ios::trunc);
+        if (!o) return;
+        o << j.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+    }
+    remove(FAV_FILE);
+    rename(tmp.c_str(), FAV_FILE);
+}
+static bool fav_has(const Item* it) { return std::find(g_fav.begin(), g_fav.end(), it->titulo) != g_fav.end(); }
+static void fav_toggle(const Item* it) {
+    auto f = std::find(g_fav.begin(), g_fav.end(), it->titulo);
+    if (f != g_fav.end()) g_fav.erase(f); else g_fav.insert(g_fav.begin(), it->titulo);
+    fav_save();
+}
+
+// ---------- abas, fileiras por genero e busca ----------
+static const char* TABS[5] = {"Início", "Filmes", "Séries", "Minha lista", "Pesquisar"};
+static std::string lower(std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; }  // so ASCII: acentos ficam como estao
+static std::vector<std::string> split_gen(const std::string& g) {
+    std::vector<std::string> v;
+    size_t a = 0;
+    while (a <= g.size()) {
+        size_t b = g.find(',', a);
+        if (b == std::string::npos) b = g.size();
+        std::string t = g.substr(a, b - a);
+        while (!t.empty() && t.front() == ' ') t.erase(t.begin());
+        while (!t.empty() && t.back() == ' ') t.pop_back();
+        if (!t.empty()) v.push_back(t);
+        a = b + 1;
+    }
+    return v;
+}
+static void genre_rows(const std::vector<Item*>& items, const std::vector<int>& base, std::vector<Row>& R) {
+    std::vector<std::string> names;
+    for (int i : base)
+        for (auto& g : split_gen(items[i]->genero))
+            if (std::find(names.begin(), names.end(), g) == names.end()) names.push_back(g);
+    for (auto& g : names) {
+        Row r{g, {}, false};
+        for (int i : base) {
+            auto v = split_gen(items[i]->genero);
+            if (std::find(v.begin(), v.end(), g) != v.end()) r.idx.push_back(i);
+        }
+        if (r.idx.size() >= 2 && (int)R.size() < MAXR - 1) R.push_back(r);
+    }
+}
+// aba 0 = Inicio, 1 = Filmes, 2 = Series, 3 = Minha lista, 4 = Pesquisar (q = texto buscado)
+static std::vector<Row> build_tab_rows(const std::vector<Item*>& items, int tab, const std::string& q) {
     std::vector<Row> R;
-    std::vector<int> rc = recent_idx(items);
-    if (!rc.empty()) R.push_back(Row{"Volte a assistir", rc, true});
-    Row nov{"Novidades", {}, false}, all{"Todos os títulos", {}, false};
-    for (int i = 0; i < (int)items.size(); i++) { if (i < 8) nov.idx.push_back(i); all.idx.push_back(i); }
-    R.push_back(nov);
-    R.push_back(all);
+    std::vector<int> base;
+    for (int i = 0; i < (int)items.size(); i++)
+        if (tab == 0 || (tab == 1 && !items[i]->serie()) || (tab == 2 && items[i]->serie())) base.push_back(i);
+    if (tab <= 2) {
+        if (tab == 0) {
+            std::vector<int> rc = recent_idx(items);
+            if (!rc.empty()) R.push_back(Row{"Volte a assistir", rc, true});
+        }
+        if (base.empty()) return R;
+        Row nov{"Novidades", {}, false}, all{tab == 1 ? "Todos os filmes" : tab == 2 ? "Todas as séries" : "Todos os títulos", {}, false};
+        for (int k = 0; k < (int)base.size(); k++) { if (k < 8) nov.idx.push_back(base[k]); all.idx.push_back(base[k]); }
+        R.push_back(nov);
+        genre_rows(items, base, R);
+        R.push_back(all);
+    } else if (tab == 3) {
+        Row l{"Minha lista", {}, false};
+        for (auto& t : g_fav)
+            for (int i = 0; i < (int)items.size(); i++) if (items[i]->titulo == t) { l.idx.push_back(i); break; }
+        if (!l.idx.empty()) R.push_back(l);
+    } else if (!q.empty()) {
+        std::string lq = lower(q);
+        Row r{"Resultados para “" + q + "”", {}, false};
+        for (int i = 0; i < (int)items.size(); i++) {
+            const Item* it = items[i];
+            if (lower(it->titulo + " " + it->genero + " " + it->sinopse).find(lq) != std::string::npos) r.idx.push_back(i);
+        }
+        if (!r.idx.empty()) R.push_back(r);
+    }
     return R;
+}
+// teclado do Switch
+static bool ask_text(const char* guide, std::string& out) {
+    SwkbdConfig kbd;
+    if (R_FAILED(swkbdCreate(&kbd, 0))) return false;
+    swkbdConfigMakePresetDefault(&kbd);
+    swkbdConfigSetHeaderText(&kbd, "Pesquisar");
+    swkbdConfigSetGuideText(&kbd, guide);
+    swkbdConfigSetOkButtonText(&kbd, "Buscar");
+    swkbdConfigSetStringLenMax(&kbd, 40);
+    char buf[128] = {0};
+    Result rc = swkbdShow(&kbd, buf, sizeof(buf));
+    swkbdClose(&kbd);
+    if (R_FAILED(rc)) return false;
+    out = buf;
+    return !out.empty();
 }
 // o que esta visivel agora (e as paginas vizinhas da fileira em foco) tem prioridade nas capas
 static void compute_vis(const std::vector<Row>& rows, int row, int col, int vtop, const int* first, size_t n,
@@ -631,7 +730,27 @@ static void draw_pager(SDL_Renderer* r, int y, int pages, int cur, bool active) 
     key(x - 12 - 30, "L", cur > 0);
 }
 
-static void draw_hero(SDL_Renderer* r, Item* it, bool resume) {
+static void draw_header(SDL_Renderer* r, int tab, bool focus) {
+    for (int i = 0; i < 56; i++) rect(r, 0, i, 1280, 1, 0, 0, 0, (56 - i) * 3);  // degrade escuro sob o cabecalho
+    draw_logo(r, X0, 14, 30);
+    int x = X0 + (LOGO ? LOGO_W * 30 / LOGO_H : tw(1, "NETFLIX")) + 36;
+    for (int i = 0; i < 5; i++) {
+        int w = tw(0, TABS[i]);
+        bool sel = i == tab;
+        txt(r, 0, TABS[i], x + 16, 21, sel ? WHITE : GRAY);
+        if (sel) rect(r, x + 16, 45, w, 3, 229, 9, 20, 255);
+        if (sel && focus) {
+            SDL_SetRenderDrawBlendMode(r, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(r, 255, 255, 255, (Uint8)(255 * g_a));
+            for (int k = 0; k < 2; k++) { SDL_Rect b{x - k, 14 - k, w + 32 + 2 * k, 36 + 2 * k}; SDL_RenderDrawRect(r, &b); }
+        }
+        x += w + 32 + 8;
+    }
+    const char* hint = "X  Minha lista     Y  Pesquisar";
+    txt(r, 0, hint, X0 + 4 * CW + 3 * GAP - tw(0, hint), 21, GRAY);
+}
+
+static void draw_hero(SDL_Renderer* r, Item* it, bool resume, bool fav) {
     if (it->tex) draw_cover(r, it->tex, SDL_Rect{480, 0, 800, HERO_H}, 0.25f);
     if (OV) { SDL_Rect o{0, 0, 1280, HERO_H}; blit(r, OV, &o); }
     else {
@@ -639,21 +758,22 @@ static void draw_hero(SDL_Renderer* r, Item* it, bool resume) {
         for (int i = 0; i < 48; i++) rect(r, 480 + i * 10, 0, 10, HERO_H, 20, 20, 20, 255 - i * 255 / 47);
         for (int i = 0; i < 45; i++) rect(r, 0, HERO_H - 45 + i, 1280, 1, 20, 20, 20, i * 255 / 44);
     }
-    draw_logo(r, X0, 14, 32);
-    draw_title(r, it->titulo, X0, 50, 46, 42, 640);
+    draw_title(r, it->titulo, X0, 56, 52, 42, 640);
     std::string meta;
     for (const std::string* p : {&it->ano, &it->genero, &it->duracao})
         if (!p->empty()) meta += (meta.empty() ? "" : "  |  ") + *p;
     if (it->serie())
         meta += (meta.empty() ? "" : "  |  ") + std::to_string(it->seasons.size()) + (it->seasons.size() == 1 ? " temporada" : " temporadas");
-    txt(r, 0, fit(0, meta, 640), X0, 136, GRAY);
+    txt(r, 0, fit(0, meta, 640), X0, 140, GRAY);
     auto syn = wrap_px(0, it->sinopse, 600, 2);
-    for (size_t i = 0; i < syn.size(); i++) txt(r, 0, syn[i], X0, 162 + (int)i * 22, SDL_Color{200, 200, 200, 255});
-    // botao branco com o icone de play
-    const int by = 216;
-    rect(r, X0, by, 200, 36, 255, 255, 255, 255);
-    for (int c = 0; c < 12; c++) { int h = 16 * (12 - c) / 12; rect(r, X0 + 16 + c, by + 18 - h / 2, 1, h, 0, 0, 0, 255); }
-    txt(r, 1, resume ? "Continuar" : "Assistir", X0 + 44, by + 2, SDL_Color{0, 0, 0, 255});
+    for (size_t i = 0; i < syn.size(); i++) txt(r, 0, syn[i], X0, 166 + (int)i * 22, SDL_Color{200, 200, 200, 255});
+    // acao principal (vermelha) e Minha lista
+    const int by = 218;
+    rect(r, X0, by, 190, 36, 229, 9, 20, 255);
+    for (int c = 0; c < 12; c++) { int h = 16 * (12 - c) / 12; rect(r, X0 + 16 + c, by + 18 - h / 2, 1, h, 255, 255, 255, 255); }
+    txt(r, 1, resume ? "Continuar" : "Assistir", X0 + 42, by + 2, WHITE);
+    rect(r, X0 + 204, by, 250, 36, 90, 90, 90, 210);
+    txt(r, 0, fav ? "X  Na minha lista" : "X  Minha lista", X0 + 204 + 16, by + 8, WHITE);
 }
 
 static void draw_card(SDL_Renderer* r, Item* it, int x, int y, bool sel, float prog) {
@@ -1297,6 +1417,7 @@ int main() {
         bool o = load_items(items, err);
         if (o) {
             hist_load();
+            fav_load();
             std::vector<int> want = recent_idx(items);
             for (int i = 0; i < (int)items.size() && i < 10; i++) want.push_back(i);
             { std::lock_guard<std::mutex> l(g_mx); g_want = want; }
@@ -1315,13 +1436,17 @@ int main() {
     bool ok = boot == 1;
 
     std::vector<Row> rows;
-    int row = 0, col = 0, vtop = 0, first[3] = {0, 0, 0};
-    int pf[3] = {0, 0, 0}, pdir[3] = {1, 1, 1};  // pagina anterior / sentido da troca (animacao)
-    Uint32 ptime[3] = {0, 0, 0};
+    int row = 0, col = 0, vtop = 0, first[MAXR] = {0};
+    int tab = 0;                 // aba do cabecalho
+    bool hdr = false;            // foco no cabecalho (Up na primeira fileira)
+    std::string query;           // texto da busca
+    int pf[MAXR] = {0}, pdir[MAXR];  // pagina anterior / sentido da troca (animacao)
+    std::fill(pdir, pdir + MAXR, 1);
+    Uint32 ptime[MAXR] = {0};
     std::vector<char> vis;
     std::vector<int> want;
     if (ok && !quit) {
-        rows = build_rows(items);
+        rows = build_tab_rows(items, tab, query);
         Uint32 w0 = SDL_GetTicks();  // espera (atras do circulo) as capas da primeira tela: sem "pop-in" na animacao
         for (;;) {
             compute_vis(rows, row, col, vtop, first, items.size(), vis, want);
@@ -1345,42 +1470,84 @@ int main() {
 
         int n = (int)items.size(), nr = (int)rows.size();
         if (ok) {
-            int prow = row, slot = col - first[row];  // slot = coluna visual (0..3): ao trocar de fileira, continua na mesma coluna
-            if (d & HidNpadButton_Up) row = std::max(0, row - 1);
-            if (d & HidNpadButton_Down) row = std::min(nr - 1, row + 1);
-            if (row != prow) col = first[row] + std::max(0, std::min(slot, PG - 1));
-            int N = (int)rows[row].idx.size();
-            if (d & HidNpadButton_Left) col--;
-            if (d & HidNpadButton_Right) col++;
-            col = std::max(0, std::min(col, N - 1));
-            first[row] = scroll_to(first[row], col, N);
-            slot = col - first[row];
-            if (d & (HidNpadButton_R | HidNpadButton_ZR)) {  // R: proxima pagina da fileira
-                int nf = page_next(first[row], N);
-                if (nf != first[row]) { first[row] = nf; col = std::min(N - 1, nf + slot); }
-            }
-            if (d & (HidNpadButton_L | HidNpadButton_ZL)) {  // L: pagina anterior
-                int nf = page_prev(first[row]);
-                if (nf != first[row]) { first[row] = nf; col = nf + slot; }
-            }
-            if (row < vtop) vtop = row;           // 2 fileiras visiveis por vez
-            if (row > vtop + 1) vtop = row - 1;
-            if (d & HidNpadButton_A) {
-                int ver = g_hist_ver;
-                detail(ren, pad, items[rows[row].idx[col]]);
-                rows = build_rows(items);
+            auto rebuild = [&]() {  // trocou de aba / busca / lista: monta as fileiras de novo
+                rows = build_tab_rows(items, tab, query);
                 nr = (int)rows.size();
-                if (g_hist_ver != ver) { row = 0; col = 0; vtop = 0; first[0] = first[1] = first[2] = 0; }  // o que acabou de ver vai para o inicio
-                row = std::min(row, nr - 1);
-                col = std::max(0, std::min(col, (int)rows[row].idx.size() - 1));
-                for (int r = 0; r < nr && r < 3; r++) first[r] = std::max(0, std::min(first[r], max_first((int)rows[r].idx.size())));
-                first[row] = scroll_to(first[row], col, (int)rows[row].idx.size());
-                for (int r = 0; r < 3; r++) pf[r] = first[r];  // sem animacao ao voltar da tela de detalhes
+                row = 0; col = 0; vtop = 0;
+                for (int r = 0; r < MAXR; r++) { first[r] = 0; pf[r] = 0; }
                 dirty = true;
+            };
+            auto search = [&]() {  // teclado do Switch
+                std::string sq;
+                if (ask_text("Título, gênero ou palavra da sinopse", sq)) { tab = 4; query = sq; rebuild(); if (!rows.empty()) hdr = false; }
+                dirty = true;
+            };
+            if (d & HidNpadButton_Y) search();
+            if (rows.empty()) hdr = true;  // aba vazia: so o cabecalho tem foco
+            if (hdr) {
+                int nt = tab;
+                if (d & (HidNpadButton_Left | HidNpadButton_L | HidNpadButton_ZL)) nt = std::max(0, tab - 1);
+                if (d & (HidNpadButton_Right | HidNpadButton_R | HidNpadButton_ZR)) nt = std::min(4, tab + 1);
+                if (nt != tab) { tab = nt; query.clear(); rebuild(); }
+                if (d & HidNpadButton_A) {
+                    if (tab == 4) search();
+                    else if (!rows.empty()) hdr = false;
+                }
+                if ((d & HidNpadButton_Down) && !rows.empty()) hdr = false;
+                if (rows.empty()) hdr = true;
+            } else {
+                int prow = row, slot = col - first[row];  // slot = coluna visual (0..3): ao trocar de fileira, continua na mesma coluna
+                if (d & HidNpadButton_Up) { if (row == 0) hdr = true; else row--; }
+                if (!hdr) {
+                    if (d & HidNpadButton_Down) row = std::min(nr - 1, row + 1);
+                    if (row != prow) col = first[row] + std::max(0, std::min(slot, PG - 1));
+                    int N = (int)rows[row].idx.size();
+                    if (d & HidNpadButton_Left) col--;
+                    if (d & HidNpadButton_Right) col++;
+                    col = std::max(0, std::min(col, N - 1));
+                    first[row] = scroll_to(first[row], col, N);
+                    slot = col - first[row];
+                    if (d & (HidNpadButton_R | HidNpadButton_ZR)) {  // R: proxima pagina da fileira
+                        int nf = page_next(first[row], N);
+                        if (nf != first[row]) { first[row] = nf; col = std::min(N - 1, nf + slot); }
+                    }
+                    if (d & (HidNpadButton_L | HidNpadButton_ZL)) {  // L: pagina anterior
+                        int nf = page_prev(first[row]);
+                        if (nf != first[row]) { first[row] = nf; col = nf + slot; }
+                    }
+                    if (row < vtop) vtop = row;           // 2 fileiras visiveis por vez
+                    if (row > vtop + 1) vtop = row - 1;
+                    if (d & HidNpadButton_A) {
+                        int ver = g_hist_ver;
+                        detail(ren, pad, items[rows[row].idx[col]]);
+                        rows = build_tab_rows(items, tab, query);
+                        nr = (int)rows.size();
+                        if (rows.empty()) hdr = true;
+                        else {
+                            if (g_hist_ver != ver && tab == 0) { row = 0; col = 0; vtop = 0; for (int r = 0; r < MAXR; r++) first[r] = 0; }  // o que acabou de ver vai para o inicio
+                            row = std::min(row, nr - 1);
+                            col = std::max(0, std::min(col, (int)rows[row].idx.size() - 1));
+                            for (int r = 0; r < nr && r < MAXR; r++) first[r] = std::max(0, std::min(first[r], max_first((int)rows[r].idx.size())));
+                            first[row] = scroll_to(first[row], col, (int)rows[row].idx.size());
+                        }
+                        for (int r = 0; r < MAXR; r++) pf[r] = first[r];  // sem animacao ao voltar da tela de detalhes
+                        dirty = true;
+                    } else if (d & HidNpadButton_X) {  // X: entra / sai da Minha lista
+                        fav_toggle(items[rows[row].idx[col]]);
+                        if (tab == 3) {  // removeu da propria lista: monta de novo mantendo a posicao
+                            int c = col;
+                            rebuild();
+                            if (rows.empty()) hdr = true;
+                            else { col = std::min(c, (int)rows[0].idx.size() - 1); first[0] = scroll_to(0, col, (int)rows[0].idx.size()); pf[0] = first[0]; }
+                        }
+                        dirty = true;
+                    }
+                }
             }
-            for (int r = 0; r < nr && r < 3; r++)
+            for (int r = 0; r < nr && r < MAXR; r++)
                 if (first[r] != pf[r]) { pdir[r] = first[r] > pf[r] ? 1 : -1; ptime[r] = SDL_GetTicks(); pf[r] = first[r]; }
-            compute_vis(rows, row, col, vtop, first, n, vis, want);
+            if (!rows.empty()) compute_vis(rows, row, col, vtop, first, n, vis, want);
+            else { vis.assign(n, 0); want.clear(); }
             { std::lock_guard<std::mutex> l(g_mx); g_want = want; }
             if (manage_tex(ren, items, vis)) dirty = true;
         }
@@ -1389,7 +1556,7 @@ int main() {
         bool rev = ok && T < 1500;
         if (rev) dirty = true;
         if (SDL_GetTicks() - lastDraw > 1000) dirty = true;  // refresh de seguranca (ex.: voltou do menu HOME)
-        for (int r = 0; r < 3; r++) if (SDL_GetTicks() - ptime[r] < 320) dirty = true;  // animacao da troca de pagina
+        for (int r = 0; r < MAXR; r++) if (SDL_GetTicks() - ptime[r] < 320) dirty = true;  // animacao da troca de pagina
         if (!dirty) { SDL_Delay(30); continue; }
         dirty = false;
         lastDraw = SDL_GetTicks();
@@ -1405,17 +1572,25 @@ int main() {
             continue;
         }
 
-        Item* cur = items[rows[row].idx[col]];
+        bool has = !rows.empty();
         g_a = rev ? ez(T / 600.f) : 1.f;  // destaque aparece suave...
-        draw_hero(ren, cur, item_prog(cur) >= 0);
-        for (int sl = 0; sl < 2 && vtop + sl < nr; sl++) {  // ...depois as fileiras e os cards, um a um, subindo
+        if (has) { Item* cur = items[rows[row].idx[col]]; draw_hero(ren, cur, item_prog(cur) >= 0, fav_has(cur)); }
+        draw_header(ren, tab, hdr);
+        if (!has) {
+            g_a = 1.f;
+            std::string m1 = tab == 3 ? "Sua lista está vazia" : tab == 4 ? (query.empty() ? "Pesquise por título, gênero ou sinopse" : "Nada encontrado para “" + query + "”") : "Nenhum título nesta categoria";
+            std::string m2 = tab == 3 ? "Aperte X em qualquer título para salvar aqui." : tab == 4 ? "Aperte A para digitar a busca." : "Use o direcional para trocar de aba.";
+            txt(ren, 2, m1, X0, 250);
+            txt(ren, 1, m2, X0, 330, GRAY);
+        }
+        for (int sl = 0; has && sl < 2 && vtop + sl < nr; sl++) {  // ...depois as fileiras e os cards, um a um, subindo
             int r = vtop + sl, N = (int)rows[r].idx.size();
             const Row& R = rows[r];
             float rowA = rev ? ez((T - 250.f - sl * 150) / 400.f) : 1.f;
             g_a = rowA;
             txt(ren, 1, R.label, X0, LY[sl]);
             int pages = n_pages(N), cp = cur_page(first[r], N);
-            draw_pager(ren, LY[sl], pages, cp, r == row);
+            draw_pager(ren, LY[sl], pages, cp, r == row && !hdr);
             Uint32 age = SDL_GetTicks() - ptime[r];
             float pa = age < 280 ? ez(age / 280.f) : 1.f;  // troca de pagina: os cards deslizam e aparecem
             int off = (int)((1.f - pa) * 80.f * pdir[r]);
@@ -1423,16 +1598,16 @@ int main() {
                 float p = rev ? ez((T - 350.f - sl * 150 - k * 80) / 500.f) : 1.f;
                 g_a = p * (0.2f + 0.8f * pa);
                 Item* it = items[R.idx[i]];
-                draw_card(ren, it, X0 + k * (CW + GAP) + off, CY[sl] + (int)((1.f - p) * 28), r == row && i == col, R.cont ? item_prog(it) : -1.f);
+                draw_card(ren, it, X0 + k * (CW + GAP) + off, CY[sl] + (int)((1.f - p) * 28), !hdr && r == row && i == col, R.cont ? item_prog(it) : -1.f);
             }
-            if (r == row) {  // setas nas bordas: tem mais titulos para esse lado (L / R)
+            if (r == row && !hdr) {  // setas nas bordas: tem mais titulos para esse lado (L / R)
                 g_a = rowA;
                 if (cp > 0) chevron(ren, 24, CY[sl] + CH / 2, 14, -1);
                 if (cp < pages - 1) chevron(ren, 1256, CY[sl] + CH / 2, 14, 1);
             }
         }
         g_a = rev ? ez((T - 700.f) / 400.f) : 1.f;
-        txt(ren, 0, "Direcional mover   |   L / R mudar de página   |   A abrir   |   + sair", X0, 696, GRAY);
+        txt(ren, 0, "Direcional mover  |  L / R página  |  A abrir  |  X minha lista  |  Y pesquisar  |  + sair", X0, 696, GRAY);
         g_a = 1.f;
         SDL_RenderPresent(ren);
     }
