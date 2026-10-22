@@ -1,7 +1,12 @@
 {
   "videos": [
     {
-      "titulo": "rec",
+      "titulo": "[REC]",
+      "capa": "https://image.tmdb.org/t/p/w500/nfbO00NKXSzBIzcN3KbUMdPT1EU.jpg",
+      "sinopse": "Ao longo de uma noite, uma repórter e seu cameraman acompanham um grupo de bombeiros chamados para resgatar uma mulher presa em um edifício, com resultados apavorantes. Antes de se darem conta, moradores, ajudantes e equipe de resgate são trancados dentro do edifício devido a um vírus desconhecido.",
+      "ano": "2007",
+      "genero": "Terror, Mistério",
+      "duracao": "1h 18min",
       "url": "https://drive.google.com/file/d/12xWmhInLQVspA2bNF_HoExTuhFh1y-6r/view?usp=drive_link"
     },
     {
