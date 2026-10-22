@@ -1,5 +1,8 @@
 # Netflix Player (Switch .nro)
 
+<img width="656" height="304" alt="images" src="https://github.com/user-attachments/assets/a0709690-7b9d-472b-88c1-1ff2c4c660e8" />
+
+
 Player de vídeo em streaming (buffer em RAM, sem baixar o arquivo inteiro) com visual estilo Netflix e capas.
 
 ## Como usar
