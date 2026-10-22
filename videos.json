@@ -1,7 +1,12 @@
 {
   "videos": [
     {
-      "titulo": "espetacular h",
+      "titulo": "O Espetacular Homem-Aranha",
+      "capa": "https://image.tmdb.org/t/p/w500/gxSsFBCFuDhVQMCuIDoZcmHOqlY.jpg",
+      "sinopse": "Peter Parker está tentando saber mais sobre sua origem. Ele encontra uma pasta que pertenceu ao seu pai e quer descobrir por que seus pais desapareceram. Sua busca o leva a Oscorp e ao dr. Curt Connors, que tem como alterego o letal Lagarto.",
+      "ano": "2012",
+      "genero": "Ação, Aventura, Ficção científica",
+      "duracao": "2h 16min",
       "url": "https://drive.google.com/file/d/1yO8e8zFb3poHBZ7RGrbbXZWmib8Xz0xL/view"
     },
     {
