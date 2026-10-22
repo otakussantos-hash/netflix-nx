@@ -38,12 +38,12 @@ button:focus-visible,input:focus-visible{outline:2px solid #e50914;outline-offse
     <span></span><button data-b="down">&darr;</button><span></span>
   </div>
   <div class="grp">
-    <span></span><button disabled>X</button><span></span>
-    <button disabled>Y</button><span></span><button data-b="a">A</button>
+    <span></span><button data-b="x">X</button><span></span>
+    <button data-b="y">Y</button><span></span><button data-b="a">A</button>
     <span></span><button data-b="b">B</button><span></span>
   </div>
 </div>
-<p class="hint">Teclado: setas = direcional, [ ou PageUp = L, ] ou PageDown = R, Enter ou Z = A, Esc ou X = B, Q = ZL, E = ZR, P = +. Controle USB/Bluetooth também funciona.</p>
+<p class="hint">Teclado: setas = direcional, [ ou PageUp = L, ] ou PageDown = R, Enter ou Z = A, Esc = B, X = minha lista, Y = pesquisar, Q = ZL, E = ZR, P = +. Controle USB/Bluetooth também funciona.</p>
 
 <script>
 const JSON_URL = "https://raw.githubusercontent.com/otakussantos-hash/netflix-nx/main/videos.json";
@@ -85,14 +85,14 @@ function fixVideo(u) { const id = driveId(u); return id ? `https://drive.usercon
 function fixCover(u) { const id = driveId(u); return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w640` : u; }
 
 // ---------- estado ----------
-let items = [], ok = false, err = "", row = 0, col = 0, first = [0, 0], rows = [], pf = [0, 0], pdir = [1, 1], ptime = [0, 0];
+let items = [], ok = false, err = "", row = 0, col = 0, first = Array(16).fill(0), rows = [], pf = Array(16).fill(0), pdir = Array(16).fill(1), ptime = Array(16).fill(0);
 const logo = new Image(); logo.src = "romfs/logo.png";
 let mode = "boot", token = 0, localJson = null, errUntil = 0;
 let down = {};
 
 async function load() {
   const tk = ++token;
-  mode = "boot"; items = []; ok = false; err = ""; row = col = 0; first = [0, 0]; pf = [0, 0]; ptime = [0, 0]; rows = [];
+  mode = "boot"; items = []; ok = false; err = ""; row = col = 0; first.fill(0); pf.fill(0); ptime.fill(0); rows = []; tab = 0; hdr = false; query = ""; vtop = 0;
   const url = $("url").value.trim() || JSON_URL;
   let text = null;
   try {
@@ -122,7 +122,7 @@ async function load() {
     }
   } catch (e) { items = []; err = "JSON invalido"; mode = "menu"; return; }
   if (!items.length) { err = "Nenhum video no JSON"; mode = "menu"; return; }
-  rows = [{ label: "Novidades", idx: items.slice(0, 8).map((_, i) => i) }, { label: "Todos os títulos", idx: items.map((_, i) => i) }];
+  rows = buildTabRows();
   ok = true; mode = "menu";
   loadCovers(tk);
 }
@@ -197,17 +197,65 @@ function drawHero(it) {
   rect(0, 0, 480, HERO_H, 20, 20, 20, 255); ctx.fillStyle = g; ctx.fillRect(480, 0, 480, HERO_H);
   g = ctx.createLinearGradient(0, HERO_H - 45, 0, HERO_H);
   g.addColorStop(0, "rgba(20,20,20,0)"); g.addColorStop(1, "#141414"); ctx.fillStyle = g; ctx.fillRect(0, HERO_H - 45, W, 45);
-  if (logo.complete && logo.naturalWidth) ctx.drawImage(logo, X0, 14, logo.naturalWidth * 32 / logo.naturalHeight, 32);
-  else txt(1, "NETFLIX", X0, 14, RED);
-  if (tw(2, it.titulo) <= 640) txt(2, it.titulo, X0, 50);
-  else wrapPx(3, it.titulo, 640, 2).forEach((l, i) => txt(3, l, X0, 46 + i * 42));
+  if (tw(2, it.titulo) <= 640) txt(2, it.titulo, X0, 56);
+  else wrapPx(3, it.titulo, 640, 2).forEach((l, i) => txt(3, l, X0, 52 + i * 42));
   let meta = [it.ano, it.genero, it.duracao].filter(Boolean).join("  |  ");
   if (it.seasons.length) meta += (meta ? "  |  " : "") + it.seasons.length + (it.seasons.length === 1 ? " temporada" : " temporadas");
-  txt(0, fit(0, meta, 640), X0, 136, GRAY);
-  wrapPx(0, it.sinopse, 600, 2).forEach((l, i) => txt(0, l, X0, 162 + i * 22, [200, 200, 200, 255]));
-  rect(X0, 216, 200, 36, 255, 255, 255, 255);
-  ctx.fillStyle = "#000"; ctx.beginPath(); ctx.moveTo(X0 + 16, 226); ctx.lineTo(X0 + 28, 234); ctx.lineTo(X0 + 16, 242); ctx.fill();
-  txt(1, "Assistir", X0 + 44, 218, BLACK);
+  txt(0, fit(0, meta, 640), X0, 140, GRAY);
+  wrapPx(0, it.sinopse, 600, 2).forEach((l, i) => txt(0, l, X0, 166 + i * 22, [200, 200, 200, 255]));
+  rect(X0, 218, 190, 36, 229, 9, 20, 255);
+  ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.moveTo(X0 + 16, 228); ctx.lineTo(X0 + 28, 236); ctx.lineTo(X0 + 16, 244); ctx.fill();
+  txt(1, "Assistir", X0 + 42, 220, WHITE);
+  rect(X0 + 204, 218, 250, 36, 90, 90, 90, 210);
+  txt(0, isFav(it) ? "X  Na minha lista" : "X  Minha lista", X0 + 220, 226, WHITE);
+}
+function drawHeader() {
+  for (let i = 0; i < 56; i++) rect(0, i, W, 1, 0, 0, 0, (56 - i) * 3);
+  const hasLogo = logo.complete && logo.naturalWidth, lw = hasLogo ? logo.naturalWidth * 30 / logo.naturalHeight : tw(1, "NETFLIX");
+  if (hasLogo) ctx.drawImage(logo, X0, 14, lw, 30); else txt(1, "NETFLIX", X0, 14, RED);
+  let x = X0 + lw + 36;
+  TABS.forEach((t, i) => {
+    const w = tw(0, t), sel = i === tab;
+    txt(0, t, x + 16, 21, sel ? WHITE : GRAY);
+    if (sel) rect(x + 16, 45, w, 3, 229, 9, 20, 255);
+    if (sel && hdr) { ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(x, 14, w + 32, 36); }
+    x += w + 40;
+  });
+  const hint = "X  Minha lista     Y  Pesquisar";
+  txt(0, hint, X0 + 4 * CW + 3 * GAP - tw(0, hint), 21, GRAY);
+}
+// ---------- abas, favoritos e busca ----------
+const TABS = ["Início", "Filmes", "Séries", "Minha lista", "Pesquisar"];
+let tab = 0, hdr = false, query = "", vtop = 0, fav = [];
+try { fav = JSON.parse(localStorage.getItem("nxfav") || "[]"); } catch (e) {}
+const saveFav = () => { try { localStorage.setItem("nxfav", JSON.stringify(fav)); } catch (e) {} };
+const isFav = it => fav.includes(it.titulo);
+const genres = it => (it.genero || "").split(",").map(x => x.trim()).filter(Boolean);
+function buildTabRows() {
+  const R = [], all = items.map((_, i) => i);
+  if (tab <= 2) {
+    const base = all.filter(i => tab === 0 || (tab === 1 ? !items[i].seasons.length : items[i].seasons.length));
+    if (!base.length) return R;
+    R.push({ label: "Novidades", idx: base.slice(0, 8) });
+    [...new Set(base.flatMap(i => genres(items[i])))].forEach(g => {
+      const idx = base.filter(i => genres(items[i]).includes(g));
+      if (idx.length > 1 && R.length < 15) R.push({ label: g, idx });
+    });
+    R.push({ label: tab === 1 ? "Todos os filmes" : tab === 2 ? "Todas as séries" : "Todos os títulos", idx: base });
+  } else if (tab === 3) {
+    const idx = fav.map(t => items.findIndex(i => i.titulo === t)).filter(i => i >= 0);
+    if (idx.length) R.push({ label: "Minha lista", idx });
+  } else if (query) {
+    const q = query.toLowerCase();
+    const idx = all.filter(i => (items[i].titulo + " " + items[i].genero + " " + items[i].sinopse).toLowerCase().includes(q));
+    if (idx.length) R.push({ label: "Resultados para “" + query + "”", idx });
+  }
+  return R;
+}
+function rebuild() { rows = buildTabRows(); row = col = vtop = 0; first.fill(0); pf.fill(0); }
+function search() {
+  const q = prompt("Pesquisar por título, gênero ou sinopse:");
+  if (q && q.trim()) { tab = 4; query = q.trim(); rebuild(); if (rows.length) hdr = false; }
 }
 function drawCard(it, x, y, sel) {
   let w = CW, h = CH;
@@ -231,36 +279,62 @@ function menu(d, now) {
     return;
   }
   if (d.plus) { mode = "exited"; return; }
-  const prow = row; let slot = col - first[row];
-  if (d.up) row = 0;
-  if (d.down) row = 1;
-  if (row !== prow) col = first[row] + Math.max(0, Math.min(slot, PG - 1));
-  const N = rows[row].idx.length;
-  if (d.left) col--;
-  if (d.right) col++;
-  col = Math.max(0, Math.min(col, N - 1));
-  first[row] = scrollTo(first[row], col, N);
-  slot = col - first[row];
-  if (d.r || d.zr) { const nf = pageNext(first[row], N); if (nf !== first[row]) { first[row] = nf; col = Math.min(N - 1, nf + slot); } }
-  if (d.l || d.zl) { const nf = pagePrev(first[row]); if (nf !== first[row]) { first[row] = nf; col = nf + slot; } }
-  for (let r = 0; r < 2; r++) if (first[r] !== pf[r]) { pdir[r] = first[r] > pf[r] ? 1 : -1; ptime[r] = now; pf[r] = first[r]; }
-  if (d.a) { startDetail(items[rows[row].idx[col]]); return; }
-  drawHero(items[rows[row].idx[col]]);
-  for (let r = 0; r < 2; r++) {
-    const R = rows[r], n = R.idx.length, pages = nPages(n), cp = curPage(first[r], n);
-    txt(1, R.label, X0, LY[r]);
-    drawPager(LY[r], pages, cp, r === row);
+  if (d.y) search();
+  if (!rows.length) hdr = true;
+  if (hdr) {
+    let nt = tab;
+    if (d.left || d.l || d.zl) nt = Math.max(0, tab - 1);
+    if (d.right || d.r || d.zr) nt = Math.min(4, tab + 1);
+    if (nt !== tab) { tab = nt; query = ""; rebuild(); }
+    if (d.a) { if (tab === 4) search(); else if (rows.length) hdr = false; }
+    if (d.down && rows.length) hdr = false;
+    if (!rows.length) hdr = true;
+  } else {
+    const prow = row; let slot = col - first[row];
+    if (d.up) { if (row === 0) hdr = true; else row--; }
+    if (!hdr) {
+      if (d.down) row = Math.min(rows.length - 1, row + 1);
+      if (row !== prow) col = first[row] + Math.max(0, Math.min(slot, PG - 1));
+      const N = rows[row].idx.length;
+      if (d.left) col--;
+      if (d.right) col++;
+      col = Math.max(0, Math.min(col, N - 1));
+      first[row] = scrollTo(first[row], col, N);
+      slot = col - first[row];
+      if (d.r || d.zr) { const nf = pageNext(first[row], N); if (nf !== first[row]) { first[row] = nf; col = Math.min(N - 1, nf + slot); } }
+      if (d.l || d.zl) { const nf = pagePrev(first[row]); if (nf !== first[row]) { first[row] = nf; col = nf + slot; } }
+      if (row < vtop) vtop = row;
+      if (row > vtop + 1) vtop = row - 1;
+      if (d.x) {
+        const it = items[rows[row].idx[col]];
+        fav = isFav(it) ? fav.filter(t => t !== it.titulo) : [it.titulo, ...fav]; saveFav();
+        if (tab === 3) { const c = col; rebuild(); if (rows.length) { col = Math.min(c, rows[0].idx.length - 1); first[0] = scrollTo(0, col, rows[0].idx.length); pf[0] = first[0]; } else hdr = true; }
+      }
+    }
+  }
+  for (let r = 0; r < rows.length && r < 16; r++) if (first[r] !== pf[r]) { pdir[r] = first[r] > pf[r] ? 1 : -1; ptime[r] = now; pf[r] = first[r]; }
+  if (d.a && !hdr && rows.length) { startDetail(items[rows[row].idx[col]]); return; }
+  if (rows.length) drawHero(items[rows[row].idx[col]]);
+  drawHeader();
+  if (!rows.length) {
+    txt(2, tab === 3 ? "Sua lista está vazia" : tab === 4 ? (query ? "Nada encontrado para “" + query + "”" : "Pesquise por título, gênero ou sinopse") : "Nenhum título nesta categoria", X0, 250);
+    txt(1, tab === 3 ? "Aperte X em qualquer título para salvar aqui." : tab === 4 ? "Aperte A (ou Y) para digitar a busca." : "Use o direcional para trocar de aba.", X0, 330, GRAY);
+  }
+  for (let sl = 0; sl < 2 && vtop + sl < rows.length; sl++) {
+    const r = vtop + sl, R = rows[r], n = R.idx.length, pages = nPages(n), cp = curPage(first[r], n);
+    txt(1, R.label, X0, LY[sl]);
+    drawPager(LY[sl], pages, cp, r === row && !hdr);
     const pa = ez((now - ptime[r]) / 280), off = (1 - pa) * 80 * pdir[r];
     ctx.globalAlpha = 0.2 + 0.8 * pa;
     for (let i = first[r], k = 0; i < Math.min(n, first[r] + PG); i++, k++)
-      drawCard(items[R.idx[i]], X0 + k * (CW + GAP) + off, CY[r], r === row && i === col);
+      drawCard(items[R.idx[i]], X0 + k * (CW + GAP) + off, CY[sl], !hdr && r === row && i === col);
     ctx.globalAlpha = 1;
-    if (r === row) {
-      if (cp > 0) chevron(24, CY[r] + CH / 2, 14, -1);
-      if (cp < pages - 1) chevron(1256, CY[r] + CH / 2, 14, 1);
+    if (r === row && !hdr) {
+      if (cp > 0) chevron(24, CY[sl] + CH / 2, 14, -1);
+      if (cp < pages - 1) chevron(1256, CY[sl] + CH / 2, 14, 1);
     }
   }
-  txt(0, "Direcional mover   |   L / R mudar de página   |   A abrir   |   + sair", X0, 696, GRAY);
+  txt(0, "Direcional mover  |  L / R página  |  A abrir  |  X minha lista  |  Y pesquisar  |  + sair", X0, 696, GRAY);
 }
 
 // ---------- detalhes ----------
@@ -382,7 +456,7 @@ const prevPad = {};
 function pollPad(d) {
   const g = (navigator.getGamepads ? navigator.getGamepads() : []).find(p => p);
   if (!g) return;
-  const map = { a: 1, b: 0, l: 4, r: 5, zl: 6, zr: 7, plus: 9, up: 12, down: 13, left: 14, right: 15 };
+  const map = { a: 1, b: 0, x: 2, y: 3, l: 4, r: 5, zl: 6, zr: 7, plus: 9, up: 12, down: 13, left: 14, right: 15 };
   for (const k in map) {
     const on = !!(g.buttons[map[k]] && g.buttons[map[k]].pressed);
     if (on && !prevPad[k]) d[k] = true;
@@ -405,7 +479,7 @@ function frame(now) {
 }
 
 // ---------- entrada ----------
-const KEYS = { "[": "l", "]": "r", pageup: "l", pagedown: "r", arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", enter: "a", z: "a", escape: "b", backspace: "b", x: "b", q: "zl", e: "zr", p: "plus" };
+const KEYS = { "[": "l", "]": "r", pageup: "l", pagedown: "r", arrowup: "up", arrowdown: "down", arrowleft: "left", arrowright: "right", enter: "a", z: "a", escape: "b", backspace: "b", x: "x", y: "y", q: "zl", e: "zr", p: "plus" };
 addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.repeat) return;
   const k = KEYS[e.key.toLowerCase()];

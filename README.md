@@ -65,8 +65,12 @@ O `.nro` agora leva `icon.jpg` (256x256) e o NACP embutidos. Troque o `icon.jpg`
 - Se o job falhar no passo de dependências, confira o nome do pacote da libmpv no devkitPro (`dkp-pacman -Ss mpv`).
 
 ## Tela inicial (v0.4)
-- **4 cards grandes por fileira**, capas sem distorção e destaque (banner) com título, sinopse e botão.
-- **L / R** (ou ZL / ZR) trocam de **página** da fileira em foco (4 títulos por vez); o indicador `[L] ● ○ ○ [R]` mostra onde você está e setas nas bordas avisam que tem mais.
-- O direcional continua andando de um em um (vira a página sozinho ao passar da borda). Cima/Baixo muda de fileira mantendo a mesma coluna.
-- "Novidades" agora mostra os 8 primeiros títulos do JSON (2 páginas).
-- `netflix-nx-simulador.html` mostra o mesmo layout (teclas `[` e `]` = L e R) e teve o bug do texto cortado corrigido.
+Visual de plataforma de streaming: fundo escuro, vermelho só nas ações principais, imagens grandes.
+
+- **Cabeçalho**: logo + abas **Início, Filmes, Séries, Minha lista, Pesquisar**. Aperte **Cima** na primeira fileira para focar o cabeçalho; **Esquerda/Direita** (ou L/R) trocam de aba, **Baixo/A** voltam para os títulos.
+- **Destaque (banner)**: muda sozinho conforme o título em foco (capa grande, título, ano/gênero/duração, sinopse, botão vermelho e botão da lista).
+- **Fileiras por categoria**: Volte a assistir, Novidades, uma fileira por gênero (lidos do campo `genero` do JSON) e Todos os títulos. Mostram **4 cards grandes** por vez.
+- **L / R** (ou ZL / ZR) trocam de **página** da fileira; o indicador `[L] ● ○ ○ [R]` e as setas nas bordas mostram que há mais títulos. O direcional anda de um em um e vira a página sozinho.
+- **Minha lista**: **X** adiciona/remove o título em foco (salvo em `sdmc:/switch/netflix-player/lista.json`).
+- **Pesquisa**: **Y** (ou aba Pesquisar + A) abre o teclado do Switch e busca em título, gênero e sinopse.
+- **A** abre a tela de detalhes. `netflix-nx-simulador.html` mostra o mesmo layout no navegador (teclas: setas, `[` `]` = L/R, Enter = A, X, Y, Esc = B, P = +).
