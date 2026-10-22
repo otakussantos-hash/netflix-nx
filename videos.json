@@ -1,7 +1,12 @@
 {
   "videos": [
     {
-      "titulo": "narnia",
+      "titulo": "As Crônicas de Nárnia: O Leão, a Feiticeira e o Guarda-Roupa",
+      "capa": "https://image.tmdb.org/t/p/w500/sDBziWxSTavCNjbayaXaDDwmTiQ.jpg",
+      "sinopse": "Durante os bombardeios da Segunda Guerra Mundial de Londres, quatro irmãos ingleses são enviados para uma casa de campo onde eles estarão seguros. Um dia, Lucy encontra um guarda-roupa que a transporta para um mundo mágico chamado Nárnia. Depois de voltar, ela logo volta a Nárnia com seus irmãos, Peter e Edmund, e sua irmã, Susan. Lá eles se juntam ao leão mágico, Aslan, na luta contra a Feiticeira Branca.",
+      "ano": "2005",
+      "genero": "Aventura, Família, Fantasia",
+      "duracao": "2h 23min",
       "url": "https://drive.google.com/file/d/1yfawrjalXd6g7OPg258P_SfYHSlCYtCm/view"
     },
     {
