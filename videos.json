@@ -1,6 +1,10 @@
 {
   "videos": [
     {
+      "titulo": "terror em",
+      "url": "https://drive.google.com/file/d/1bRMgaSS8l26guH76qh3zE6CbOJyFi_iN/view"
+    },
+    {
       "titulo": "Harry Potter e a Pedra Filosofal",
       "capa": "https://image.tmdb.org/t/p/w780/4TaB2QPBaaK5JItEcNDpD8ySNNo.jpg",
       "sinopse": "Harry Potter é um garoto órfão que vive infeliz com seus tios, os Dursley. Em seu aniversário de 11 anos ele recebe uma carta que mudará sua vida: um convite para ingressar em Hogwarts, uma Escola de Magia e Bruxaria.",
