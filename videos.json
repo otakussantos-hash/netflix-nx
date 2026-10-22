@@ -1,7 +1,12 @@
 {
   "videos": [
     {
-      "titulo": "terror em",
+      "titulo": "Terror em Amityville",
+      "capa": "https://image.tmdb.org/t/p/w500/1b9Qdr9VwSLiK1lW2KWlUEeuwIa.jpg",
+      "sinopse": "Após se mudarem para uma casa onde aconteceram terríveis assassinatos de uma mesma família, George, Kathy e seus filhos passam a viver uma forte experiência sobrenatural. As forças diabólicas que ali habitam perturbam toda a família durante 28 dias. No 28° dia, eles decidem tomar uma atitude.",
+      "ano": "1979",
+      "genero": "Terror",
+      "duracao": "1h 57min",
       "url": "https://drive.google.com/file/d/1bRMgaSS8l26guH76qh3zE6CbOJyFi_iN/view"
     },
     {
